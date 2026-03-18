@@ -1,0 +1,19 @@
+# modules/analysis_manager.py
+#
+# Pipeline orchestrator for the CyberSentinel multi-tier EDR framework.
+#
+# Responsibilities:
+#   - Routes files and hashes through the full detection pipeline:
+#     Allowlist → Cache → Cloud Consensus → ML Engine → AI Triage → Containment
+#   - Manages GUI callback registration for thread-safe dialog interaction
+#   - Fires SOC webhook alerts on every confirmed malicious verdict
+#   - Coordinates the analyst feedback and adaptive learning pipeline
+#
+# Detection tiers:
+#   Tier 0    Allowlist / exclusion check
+#   Tier 0.5  SQLite cache (instant repeat-detection)
+#   Tier 1    Concurrent cloud consensus (VirusTotal, OTX, MetaDefender, MalwareBazaar)
+#   Tier 2    Offline LightGBM ML classifier (EMBER2024 PE features)
+#   Tier 3    Local Ollama LLM triage report (MITRE mapping, YARA rule generation)
+#   Tier 4    Containment (encrypted quarantine, Windows Firewall host isolation)
+

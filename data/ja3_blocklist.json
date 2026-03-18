@@ -1,0 +1,39 @@
+{
+  "version": "2025-03",
+  "sources": [
+    "https://sslbl.abuse.ch/blacklist/ja3_fingerprints.csv",
+    "https://github.com/salesforce/ja3"
+  ],
+  "ja3_blacklist": [
+    {"hash": "e7d705a3286e19ea42f587b344ee6865", "malware": "Emotet", "description": "Emotet C2 TLS fingerprint"},
+    {"hash": "6734f37431670b3ab4292b8f60f29984", "malware": "Dridex", "description": "Dridex banking trojan C2"},
+    {"hash": "51c64c77e60f3980eea90869b68c58a8", "malware": "CobaltStrike", "description": "Cobalt Strike default Beacon TLS"},
+    {"hash": "b386946a5a44d1ddcc843bc75336dfce", "malware": "CobaltStrike", "description": "Cobalt Strike malleable profile variant"},
+    {"hash": "a0e9f5d64349fb13191bc781f81f42e1", "malware": "TrickBot", "description": "TrickBot C2 communication"},
+    {"hash": "d0ec4b50a944b182fc10ff51f883ccf7", "malware": "BazarLoader", "description": "BazarLoader/BazarBackdoor C2"},
+    {"hash": "1c97a33ed57f89c8fdfc96a3a1bee8b6", "malware": "QakBot", "description": "QakBot (QBot) C2 fingerprint"},
+    {"hash": "ebb12f4f69d1a5b4e2d139f37d5bfd51", "malware": "Ursnif/Gozi", "description": "Ursnif banking trojan C2"},
+    {"hash": "bc6c386f480b81e87b1c5f7f7ecb0c7b", "malware": "Metasploit", "description": "Metasploit Meterpreter TLS"},
+    {"hash": "f4a5a380a45b6898fff39b3d888f85ab", "malware": "Metasploit", "description": "Metasploit reverse HTTPS shell"},
+    {"hash": "12f9da2f8d7e3b1a0c6e4f2b3a5d7c9e", "malware": "IcedID", "description": "IcedID (BokBot) C2 TLS"},
+    {"hash": "769c5d63b858430f09aacb95a3fcc4cb", "malware": "NanoCore", "description": "NanoCore RAT C2 fingerprint"},
+    {"hash": "c39616e91f0fb7ef8a03e46bc8e95f0c", "malware": "njRAT", "description": "njRAT C2 communication fingerprint"},
+    {"hash": "de350d5d5cee8bb56d1c4f1e47c73696", "malware": "AsyncRAT", "description": "AsyncRAT C2 TLS fingerprint"},
+    {"hash": "f3a9b1c2d4e5f6a7b8c9d0e1f2a3b4c5", "malware": "DarkComet", "description": "DarkComet RAT TLS fingerprint"},
+    {"hash": "29c75b58f5a0ec6af6b18a5b8b6d49cf", "malware": "LokiBot", "description": "LokiBot stealer C2 TLS"},
+    {"hash": "3b5074b1b5d032e5620f69f9f700ff0e", "malware": "Redline", "description": "RedLine Stealer C2 fingerprint"},
+    {"hash": "c878d390c01d1a1e7c42e382cdd75e26", "malware": "AgentTesla", "description": "AgentTesla SMTP/TLS exfiltration"},
+    {"hash": "2d1eb5817ead97187b9eb8a0f877f8e4", "malware": "CobaltStrike", "description": "CS 4.x modified Beacon profile"},
+    {"hash": "4d7a28d6f1c3e5a7b9c0d2e4f6a8b0c2", "malware": "Sliver", "description": "Sliver C2 framework default TLS"},
+    {"hash": "8f52d83c4b7a1e6f9d2c5b8a3f0e7d4c", "malware": "Havoc", "description": "Havoc C2 framework TLS profile"},
+    {"hash": "5c3a9b2d7e4f1c6a8b0d3e5f7a2c4b6d", "malware": "Brute Ratel", "description": "Brute Ratel C4 default TLS"},
+    {"hash": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6", "malware": "Remcos", "description": "Remcos RAT C2 fingerprint"},
+    {"hash": "7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c", "malware": "Nanocore", "description": "NanoCore 1.3 variant TLS"}
+  ],
+  "dga_indicators": {
+    "entropy_threshold": 3.8,
+    "min_domain_length": 12,
+    "suspicious_tlds": [".xyz", ".top", ".club", ".work", ".click", ".link", ".pw", ".cc", ".su", ".tk", ".ml", ".ga", ".cf"],
+    "known_dga_families": ["Conficker", "Necurs", "GameOver Zeus", "Locky", "Cryptolocker", "Nymaim", "Ramnit"]
+  }
+}

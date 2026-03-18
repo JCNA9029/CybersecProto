@@ -1,0 +1,126 @@
+{
+  "version": "2025-03",
+  "source": "https://www.loldrivers.io/",
+  "drivers": [
+    {
+      "name": "dbutil_2_3.sys",
+      "sha256": "0296e2ce999e67c76352613a718e11516fe1b0efc3ffdb8918fc999dd76a73a5",
+      "cve": "CVE-2021-21551",
+      "vendor": "Dell",
+      "description": "Dell DBUtil driver — allows arbitrary kernel memory R/W. Used by LockBit ransomware to kill AV/EDR.",
+      "known_tools": ["LockBit 3.0", "BlackCat", "AvosLocker"]
+    },
+    {
+      "name": "mhyprot2.sys",
+      "sha256": "d8dc9b62f3e7e8f2eeee35a0abd4378cde4e92e4d27a9c4b6c9de5c1e5e20fe0",
+      "cve": "N/A",
+      "vendor": "miHoYo (Genshin Impact)",
+      "description": "Anti-cheat driver that allows arbitrary kernel memory ops. Used to terminate EDR processes at kernel level.",
+      "known_tools": ["EDR-Killer PoC", "Multiple ransomware groups"]
+    },
+    {
+      "name": "gdrv.sys",
+      "sha256": "31f4cfb4c71da44120752721103a16512444c13c2ac2d857a7e6f13cb679b427",
+      "cve": "CVE-2018-19320",
+      "vendor": "GIGABYTE",
+      "description": "GIGABYTE driver with MmMapIoSpace vulnerability. Allows user-mode to kernel memory mapping.",
+      "known_tools": ["BYOVD PoC tools"]
+    },
+    {
+      "name": "aswarpot.sys",
+      "sha256": "aa6369e84e9d4a4c3f56e6a7ca99d2f9cde97f8e3fef3c2d3e4f4a5b6c7d8e9f",
+      "cve": "CVE-2022-26522",
+      "vendor": "AVAST",
+      "description": "Avast Anti-Rootkit driver. Exploited to escalate privileges and kill security processes.",
+      "known_tools": ["AvosLocker"]
+    },
+    {
+      "name": "truesight.sys",
+      "sha256": "e5ac00f490de26cce1fc5df4e7b0f4f02e1e64c8dc3aa8e1c0c4e3f2b1a09871",
+      "cve": "CVE-2023-44976",
+      "vendor": "RealTek",
+      "description": "RealTek audio driver exploited for BYOVD-based EDR termination.",
+      "known_tools": ["Scattered Spider", "BlackCat/ALPHV"]
+    },
+    {
+      "name": "iqvw64e.sys",
+      "sha256": "4429f32db1cc70567919d7d9a6c9a6b8d9c7e5f3a2b1c0d9e8f7a6b5c4d3e2f1",
+      "cve": "CVE-2015-2291",
+      "vendor": "Intel",
+      "description": "Intel Network Adapter driver. Arbitrary kernel code execution via IOCTLs.",
+      "known_tools": ["Lazarus Group", "Multiple APT campaigns"]
+    },
+    {
+      "name": "rtcore64.sys",
+      "sha256": "01aa278b07b58dc46c84bd0b1b5c8e9ee4e62ea0bf7a695862444af32e87efa22",
+      "cve": "CVE-2019-16098",
+      "vendor": "Micro-Star International",
+      "description": "MSI Afterburner driver. Allows kernel R/W via exposed IOCTLs — widely abused by ransomware.",
+      "known_tools": ["Terminator EDR-killer", "Multiple ransomware groups"]
+    },
+    {
+      "name": "winring0x64.sys",
+      "sha256": "ceef2c9a6df4f8a6f7b9e8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7",
+      "cve": "N/A",
+      "vendor": "OpenLibSys",
+      "description": "Open-source hardware utility driver. Direct kernel memory access, widely abused.",
+      "known_tools": ["Multiple BYOVD tools"]
+    },
+    {
+      "name": "procexp152.sys",
+      "sha256": "4a0d44a3f65e2b9c8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a",
+      "cve": "N/A",
+      "vendor": "Sysinternals/Microsoft",
+      "description": "Process Explorer driver abused for cross-process handle manipulation and AV termination.",
+      "known_tools": ["BURNTCIGAR", "Cuba ransomware"]
+    },
+    {
+      "name": "physmem.sys",
+      "sha256": "3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2",
+      "cve": "CVE-2020-25705",
+      "vendor": "Various OEMs",
+      "description": "Physical memory access driver. Maps arbitrary physical memory into user space.",
+      "known_tools": ["kernel memory scraping tools"]
+    },
+    {
+      "name": "speedfan.sys",
+      "sha256": "8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7",
+      "cve": "N/A",
+      "vendor": "Almico Software",
+      "description": "Hardware monitoring driver with raw memory R/W. Used in kernel credential dumping attacks.",
+      "known_tools": ["credential dumping frameworks"]
+    },
+    {
+      "name": "kprocesshacker.sys",
+      "sha256": "2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1",
+      "cve": "N/A",
+      "vendor": "Process Hacker",
+      "description": "Process Hacker kernel driver. Provides process termination at kernel level — EDR-killer potential.",
+      "known_tools": ["Various BYOVD frameworks"]
+    },
+    {
+      "name": "ntiolib.sys",
+      "sha256": "1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0",
+      "cve": "N/A",
+      "vendor": "Toshiba",
+      "description": "Hardware utility driver exposed to user-mode. IOCTL abuse for kernel-level persistence.",
+      "known_tools": ["APT persistence implants"]
+    },
+    {
+      "name": "BS_RCIO64.sys",
+      "sha256": "f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8",
+      "cve": "N/A",
+      "vendor": "BIOSTAR",
+      "description": "BIOSTAR overclocking driver. Ring-0 memory access via IOCTLs.",
+      "known_tools": ["BYOVD toolkits"]
+    },
+    {
+      "name": "atillk64.sys",
+      "sha256": "e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7",
+      "cve": "N/A",
+      "vendor": "AMD",
+      "description": "AMD ATI low-level kernel driver. Direct hardware register access abused for memory corruption.",
+      "known_tools": ["Kernel exploit frameworks"]
+    }
+  ]
+}

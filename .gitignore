@@ -1,0 +1,81 @@
+# ──────────────────────────────────────────────
+#  CyberSentinel — .gitignore
+# ──────────────────────────────────────────────
+
+# ── Python ────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+.Python
+
+# ── Virtual environments ──────────────────────
+venv/
+env/
+.venv/
+.env/
+ENV/
+
+# ── CyberSentinel runtime data ────────────────
+# Database — contains scan history and keys. Never commit.
+threat_cache.db
+
+# Encrypted config — contains API keys and webhook URL
+config.json
+
+# Quarantine folder — contains actual malware samples
+Quarantine/
+quarantine/
+
+# Baseline learning flag
+baseline_learning.flag
+
+# Session analysis reports
+Analysis Files/
+
+# Evaluation output
+eval_report.json
+
+# ── Threat intel feeds (auto-downloaded, large) ──
+intel/
+# Uncomment below to track feed metadata only:
+# !intel/update_meta.json
+
+# ── ML model files (large binaries, host separately) ──
+models/
+*.model
+*.lgb
+*.joblib
+*.pkl
+
+# ── Logs ─────────────────────────────────────
+*.log
+logs/
+
+# ── IDE / Editor ──────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── OS ────────────────────────────────────────
+desktop.ini
+$RECYCLE.BIN/
+
+# ── Test artifacts ────────────────────────────
+test_samples/
+samples/
+
+# ── Zip archives ──────────────────────────────
+*.zip
+*.tar.gz
+*.rar

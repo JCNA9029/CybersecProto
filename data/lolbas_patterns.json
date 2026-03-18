@@ -1,0 +1,216 @@
+{
+  "version": "2025-03",
+  "source": "https://lolbas-project.github.io/",
+  "binaries": [
+    {
+      "name": "certutil.exe",
+      "mitre": "T1105",
+      "tactic": "Command and Control / Ingress Tool Transfer",
+      "patterns": ["-urlcache", "-decode", "-encode", "-ping", "download"],
+      "description": "Used to download files from remote URLs or decode Base64 payloads"
+    },
+    {
+      "name": "mshta.exe",
+      "mitre": "T1218.005",
+      "tactic": "Defense Evasion / Signed Binary Proxy Execution",
+      "patterns": ["http://", "https://", "vbscript:", "javascript:", ".hta"],
+      "description": "Executes malicious HTA files or inline VBScript/JavaScript"
+    },
+    {
+      "name": "regsvr32.exe",
+      "mitre": "T1218.010",
+      "tactic": "Defense Evasion / Signed Binary Proxy Execution",
+      "patterns": ["/s", "/u", "/i:", "scrobj.dll", "http://", "https://"],
+      "description": "Executes remote .sct COM scriptlets via Squiblydoo technique"
+    },
+    {
+      "name": "rundll32.exe",
+      "mitre": "T1218.011",
+      "tactic": "Defense Evasion / Signed Binary Proxy Execution",
+      "patterns": ["javascript:", "vbscript:", "shell32.dll,Control_RunDLL", "url.dll,FileProtocolHandler", "pcwrun.dll"],
+      "description": "Proxies execution of arbitrary DLLs or inline scripts"
+    },
+    {
+      "name": "powershell.exe",
+      "mitre": "T1059.001",
+      "tactic": "Execution / Command and Scripting Interpreter",
+      "patterns": ["-enc", "-encodedcommand", "-nop", "-noprofile", "-windowstyle hidden", "-exec bypass", "iex", "invoke-expression", "downloadstring", "webclient"],
+      "description": "Encoded or hidden PowerShell execution — classic RAT delivery"
+    },
+    {
+      "name": "pwsh.exe",
+      "mitre": "T1059.001",
+      "tactic": "Execution / Command and Scripting Interpreter",
+      "patterns": ["-enc", "-encodedcommand", "-nop", "-exec bypass", "iex", "downloadstring"],
+      "description": "PowerShell Core abuse — same patterns as powershell.exe"
+    },
+    {
+      "name": "wscript.exe",
+      "mitre": "T1059.005",
+      "tactic": "Execution / Command and Scripting Interpreter",
+      "patterns": [".js", ".vbs", ".vbe", ".jse", "http://", "https://"],
+      "description": "Executes malicious VBScript or JScript payloads"
+    },
+    {
+      "name": "cscript.exe",
+      "mitre": "T1059.005",
+      "tactic": "Execution / Command and Scripting Interpreter",
+      "patterns": [".js", ".vbs", ".vbe", "http://", "https://", "//nologo"],
+      "description": "Console-based VBScript/JScript execution, often used for stealthy payloads"
+    },
+    {
+      "name": "msbuild.exe",
+      "mitre": "T1127.001",
+      "tactic": "Defense Evasion / Trusted Developer Utilities Proxy Execution",
+      "patterns": [".csproj", ".vbproj", ".proj", "http://", "https://"],
+      "description": "Compiles and executes inline C# code embedded in .proj files"
+    },
+    {
+      "name": "installutil.exe",
+      "mitre": "T1218.004",
+      "tactic": "Defense Evasion / Signed Binary Proxy Execution",
+      "patterns": ["/logfile=", "/logtoconsole=", ".dll", ".exe"],
+      "description": "Executes arbitrary .NET assemblies via the Uninstall method"
+    },
+    {
+      "name": "regasm.exe",
+      "mitre": "T1218.009",
+      "tactic": "Defense Evasion / Signed Binary Proxy Execution",
+      "patterns": ["/u", ".dll"],
+      "description": "Executes arbitrary code from a .NET DLL via COM registration"
+    },
+    {
+      "name": "regsvcs.exe",
+      "mitre": "T1218.009",
+      "tactic": "Defense Evasion / Signed Binary Proxy Execution",
+      "patterns": [".dll"],
+      "description": "Same abuse vector as regasm.exe — .NET DLL proxy execution"
+    },
+    {
+      "name": "bitsadmin.exe",
+      "mitre": "T1197",
+      "tactic": "Persistence / Defense Evasion / BITS Jobs",
+      "patterns": ["/transfer", "/addfile", "/setnotifycmdline", "http://", "https://"],
+      "description": "Downloads files or establishes persistent BITS jobs for C2 callbacks"
+    },
+    {
+      "name": "wmic.exe",
+      "mitre": "T1047",
+      "tactic": "Execution / Windows Management Instrumentation",
+      "patterns": ["process call create", "os get", "shadowcopy delete", "/node:", "xsl", "format:"],
+      "description": "Spawns processes remotely, deletes VSS shadow copies, or runs XSL scripts"
+    },
+    {
+      "name": "schtasks.exe",
+      "mitre": "T1053.005",
+      "tactic": "Persistence / Privilege Escalation / Scheduled Task",
+      "patterns": ["/create", "/ru system", "/sc", "http://", "powershell", "cmd.exe"],
+      "description": "Creates persistence via scheduled tasks — common ransomware technique"
+    },
+    {
+      "name": "at.exe",
+      "mitre": "T1053.002",
+      "tactic": "Persistence / Scheduled Task/Job",
+      "patterns": ["\\\\", "/every", "powershell", "cmd"],
+      "description": "Legacy AT scheduler used for persistence on older systems"
+    },
+    {
+      "name": "cmd.exe",
+      "mitre": "T1059.003",
+      "tactic": "Execution / Command and Scripting Interpreter",
+      "patterns": ["/c echo", "^ ", "&&", "||", "| cmd", "copy con", "for /f"],
+      "description": "Obfuscated cmd.exe execution chains — common payload staging technique"
+    },
+    {
+      "name": "net.exe",
+      "mitre": "T1021",
+      "tactic": "Lateral Movement / Remote Services",
+      "patterns": ["use \\\\", "user /add", "localgroup administrators", "view /domain"],
+      "description": "Creates local admin accounts or maps shares for lateral movement"
+    },
+    {
+      "name": "net1.exe",
+      "mitre": "T1021",
+      "tactic": "Lateral Movement / Remote Services",
+      "patterns": ["user /add", "localgroup administrators"],
+      "description": "Same as net.exe — used to evade tooling that only monitors net.exe"
+    },
+    {
+      "name": "xcopy.exe",
+      "mitre": "T1570",
+      "tactic": "Lateral Movement / Lateral Tool Transfer",
+      "patterns": ["/s", "/e", "/h", "\\\\"],
+      "description": "Copies malware binaries to remote network shares"
+    },
+    {
+      "name": "expand.exe",
+      "mitre": "T1105",
+      "tactic": "Command and Control / Ingress Tool Transfer",
+      "patterns": ["-f:", "http://", "\\\\"],
+      "description": "Decompresses and drops files from remote locations"
+    },
+    {
+      "name": "esentutl.exe",
+      "mitre": "T1003.003",
+      "tactic": "Credential Access / OS Credential Dumping",
+      "patterns": ["/y", "/vss", "ntds.dit", "sam", "system"],
+      "description": "Copies locked NTDS.dit or SAM hive for offline credential extraction"
+    },
+    {
+      "name": "vssadmin.exe",
+      "mitre": "T1490",
+      "tactic": "Impact / Inhibit System Recovery",
+      "patterns": ["delete shadows", "/quiet", "/all"],
+      "description": "Deletes VSS shadow copies — primary ransomware anti-recovery technique"
+    },
+    {
+      "name": "wevtutil.exe",
+      "mitre": "T1070.001",
+      "tactic": "Defense Evasion / Indicator Removal on Host",
+      "patterns": ["cl ", "clear-log", "/e:false"],
+      "description": "Clears Windows event logs to destroy forensic evidence"
+    },
+    {
+      "name": "nltest.exe",
+      "mitre": "T1482",
+      "tactic": "Discovery / Domain Trust Discovery",
+      "patterns": ["/domain_trusts", "/dclist:", "/server:"],
+      "description": "Enumerates domain trusts for lateral movement planning"
+    },
+    {
+      "name": "dnscmd.exe",
+      "mitre": "T1543",
+      "tactic": "Persistence / Create or Modify System Process",
+      "patterns": ["/config", "/serverlevelplugindll", "http://"],
+      "description": "Plants a malicious DLL into the DNS server as a persistence mechanism"
+    },
+    {
+      "name": "odbcconf.exe",
+      "mitre": "T1218.008",
+      "tactic": "Defense Evasion / Signed Binary Proxy Execution",
+      "patterns": ["/a", "regsvr", ".dll", ".rsp"],
+      "description": "Registers and executes arbitrary DLLs via ODBC configuration"
+    },
+    {
+      "name": "ieexec.exe",
+      "mitre": "T1105",
+      "tactic": "Command and Control / Ingress Tool Transfer",
+      "patterns": ["http://", "https://", "ftp://"],
+      "description": "Downloads and executes a remote binary — a signed Microsoft binary"
+    },
+    {
+      "name": "microsoft.workflow.compiler.exe",
+      "mitre": "T1127",
+      "tactic": "Defense Evasion / Trusted Developer Utilities",
+      "patterns": [".xml", ".xoml"],
+      "description": "Compiles and runs arbitrary C# via Windows Workflow Foundation"
+    },
+    {
+      "name": "cmstp.exe",
+      "mitre": "T1218.003",
+      "tactic": "Defense Evasion / Signed Binary Proxy Execution",
+      "patterns": ["/ni", "/s", ".inf", "http://", "https://"],
+      "description": "Installs remote network profiles or executes COM scriptlets"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+# CyberSentinel Enterprise Exclusion List
+# Add directory or file paths below to bypass scanning.
+# Example: C:\Program Files\MySafeCompany\
+
+Code.exe
+SecurityHealthHost.exe

@@ -1,0 +1,48 @@
+# ──────────────────────────────────────────────────────────────
+#  CyberSentinel v2 — Python Dependencies
+#  Install: pip install -r requirements.txt
+# ──────────────────────────────────────────────────────────────
+
+# ── Core ───────────────────────────────────────────────────────
+requests>=2.31.0          # Cloud API calls (VirusTotal, OTX, MetaDefender, MalwareBazaar)
+psutil>=5.9.0             # Live process enumeration + network monitoring
+watchdog>=3.0.0           # Daemon filesystem observer
+cryptography>=41.0.0      # Fernet AES-128 encryption for API keys
+colorama>=0.4.6           # Terminal color output
+
+# ── ML Engine ──────────────────────────────────────────────────
+pefile>=2023.2.7          # Windows PE feature extraction
+lightgbm>=4.1.0           # Stage 1 malware classifier
+numpy>=1.24.0             # Feature array processing
+
+# ── AI Analyst (Tier 3) ────────────────────────────────────────
+ollama>=0.1.0             # Local LLM interface
+# Recommended model: ollama pull deepseek-r1:8b
+# Fallback model:    ollama pull qwen2.5:7b
+
+# ── SOC Dashboard ──────────────────────────────────────────────
+flask>=3.0.0              # Web dashboard (dashboard.py)
+
+# ── Desktop GUI ────────────────────────────────────────────────
+PyQt6>=6.6.0              # Native desktop GUI (gui.py)
+
+# ── Optional — JA3 C2 Fingerprinting ──────────────────────────
+# Requires Npcap installed first: https://npcap.com/
+# scapy>=2.5.0
+
+# ── Optional — AMSI Monitor + WMI Daemon (Windows only) ───────
+# pip install pywin32
+# pip install wmi
+
+# ── Optional — EMBER2024 ML Feature Extraction ────────────────
+# git clone https://github.com/FutureComputing4AI/EMBER2024
+# cd EMBER2024 && pip install .
+
+# ── Novel Features (Chapter 4 Research Contributions) ─────────────────────────
+shap>=0.44.0              # Novel Feature 2: SHAP explainability (pip install shap)
+# Dynamic Risk Scoring and Concept Drift use only stdlib + existing deps (no new packages)
+
+# ── Novel Research Features ─────────────────────────────────────────────────
+shap>=0.44.0              # SHAP explainability (Novel Contribution 2)
+                          # pip install shap
+                          # Note: requires numpy already installed
