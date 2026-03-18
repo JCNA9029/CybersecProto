@@ -52,9 +52,28 @@ def _monitor_processes(logic, lolbas, byovd, baseline, dga):
             exe_path = proc.ExecutablePath or ""
             cmdline  = proc.CommandLine   or ""
             name     = proc.Name          or ""
+            pid      = proc.ProcessId     or 0
 
-            # LoLBin check (catches windows binaries the old daemon ignored)
-            hit = lolbas.check_process(name, cmdline, from_daemon=True)
+            # Resolve parent process name for kill-chain context
+            parent_name = ""
+            parent_pid  = proc.ParentProcessId or 0
+            if parent_pid:
+                try:
+                    parent_list = wmi.WMI().Win32_Process(ProcessId=parent_pid)
+                    if parent_list:
+                        parent_name = parent_list[0].Name or ""
+                except Exception:
+                    pass
+
+            # LoLBin check — includes parent context for confidence scoring
+            hit = lolbas.check_process(
+                name,
+                cmdline,
+                from_daemon  = True,
+                parent_name  = parent_name,
+                parent_pid   = parent_pid,
+                exe_path     = exe_path,
+            )
             if hit:
                 colors.critical(lolbas.format_alert(hit))
 

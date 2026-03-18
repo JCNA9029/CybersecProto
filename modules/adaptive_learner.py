@@ -90,6 +90,35 @@ ANCHOR_RATIO   = 2.0    # Anchor samples per correction
 ANCHOR_BALANCE = 0.5    # Fraction of anchor samples that should be benign
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  ANTI-BIAS SAFEGUARDS
+#
+#  MIN_ANCHORS_PER_CLASS:
+#    Minimum confirmed samples of EACH class required before any retraining
+#    session is allowed to proceed (even forced). Prevents early-deployment
+#    bias when the anchor store is empty or too small to provide balance.
+#
+#  ANCHOR_RECENT_DAYS:
+#    Anchors newer than this many days are treated as "recent" and preferred
+#    during random selection. Recent anchors reflect the current threat
+#    landscape better than old ones. Older anchors are used as fallback.
+#
+#  ANCHOR_EXPIRY_DAYS:
+#    Anchors older than this are considered stale and excluded from retraining.
+#    Prevents outdated ground truth from permanently biasing the model.
+#    Set to 0 to disable expiry entirely.
+#
+#  MAX_IMBALANCE_RATIO:
+#    Maximum allowed ratio of majority:minority class in the final training
+#    batch. If the combined corrections+anchors exceed this ratio, retraining
+#    is blocked with a warning. 3.0 means no more than 3:1 skew is permitted.
+# ─────────────────────────────────────────────────────────────────────────────
+
+MIN_ANCHORS_PER_CLASS = 5      # Minimum of each class before retraining allowed
+ANCHOR_RECENT_DAYS    = 90     # Prefer anchors newer than this many days
+ANCHOR_EXPIRY_DAYS    = 365    # Exclude anchors older than this (0 = never expire)
+MAX_IMBALANCE_RATIO   = 3.0    # Maximum majority:minority ratio in final batch
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  DATABASE SCHEMA
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -694,19 +723,19 @@ class AdaptiveLearner:
         """
         Loads a balanced set of anchor samples to mix into the correction batch.
 
-        The number of anchors scales with the correction batch size (ANCHOR_RATIO).
-        The benign/malicious balance of anchors is adjusted to compensate for
-        any class imbalance in the correction set.
+        Anti-bias improvements:
+          1. Age weighting — recent anchors (within ANCHOR_RECENT_DAYS) are
+             preferred. Older anchors used as fallback. Expired anchors
+             (older than ANCHOR_EXPIRY_DAYS) are excluded entirely.
+          2. Inverted ratio — anchor class balance is inverted relative to
+             the correction class imbalance to restore overall balance.
+          3. Returns imbalance metrics so the caller can log or warn.
 
-        For example: if the corrections are 4 FN (malicious) and 1 FP (benign),
-        the anchor set will be weighted toward benign samples to rebalance the batch.
-
-        Returns (X_anchors, y_anchors) as numpy arrays, or (None, None) if
-        the anchor store does not have enough samples yet.
+        Returns (X_anchors, y_anchors, imbalance_info) as numpy arrays
+        and a dict, or (None, None, {}) if not enough anchors available.
         """
         n_anchors = max(2, int(n_corrections * ANCHOR_RATIO))
 
-        # Calculate how many anchors of each class to fetch based on correction imbalance
         n_malicious_corrections = correction_label_counts.get(LABEL_MALICIOUS, 0)
         n_benign_corrections    = correction_label_counts.get(LABEL_BENIGN, 0)
         total_corrections       = n_malicious_corrections + n_benign_corrections
@@ -714,86 +743,159 @@ class AdaptiveLearner:
         if total_corrections == 0:
             return None, None
 
-        # If corrections are imbalanced, bias anchors toward the underrepresented class
         correction_malicious_ratio = n_malicious_corrections / total_corrections
-
-        # Invert the correction imbalance in the anchor selection
-        # e.g. if 80% of corrections are malicious, use 80% benign anchors
         target_benign_anchor_ratio = max(
             0.2, min(0.8, 1.0 - correction_malicious_ratio)
         )
 
-        n_benign_anchors   = int(n_anchors * target_benign_anchor_ratio)
+        n_benign_anchors    = int(n_anchors * target_benign_anchor_ratio)
         n_malicious_anchors = n_anchors - n_benign_anchors
 
-        try:
-            with sqlite3.connect(utils.DB_FILE) as conn:
-                benign_rows = conn.execute(
-                    """
-                    SELECT features_json, true_label FROM anchor_samples
-                    WHERE true_label = 0
-                    ORDER BY RANDOM() LIMIT ?
-                    """,
-                    (n_benign_anchors,)
-                ).fetchall()
+        # Build date cutoffs for age weighting
+        now         = datetime.datetime.now()
+        recent_cutoff = (now - datetime.timedelta(days=ANCHOR_RECENT_DAYS)
+                         ).strftime("%Y-%m-%d %H:%M:%S")
+        expiry_cutoff = None
+        if ANCHOR_EXPIRY_DAYS > 0:
+            expiry_cutoff = (now - datetime.timedelta(days=ANCHOR_EXPIRY_DAYS)
+                             ).strftime("%Y-%m-%d %H:%M:%S")
 
-                malicious_rows = conn.execute(
-                    """
-                    SELECT features_json, true_label FROM anchor_samples
-                    WHERE true_label = 1
-                    ORDER BY RANDOM() LIMIT ?
-                    """,
-                    (n_malicious_anchors,)
-                ).fetchall()
+        def _fetch_class(label: int, n: int) -> list:
+            """Fetch n anchors of given label, preferring recent ones."""
+            try:
+                with sqlite3.connect(utils.DB_FILE) as conn:
+                    # Build expiry clause
+                    expiry_clause = (
+                        f"AND added_at >= '{expiry_cutoff}'" if expiry_cutoff else ""
+                    )
 
-            all_rows = benign_rows + malicious_rows
-            if not all_rows:
-                return None, None
+                    # Step 1: Try recent anchors first
+                    recent = conn.execute(
+                        f"""
+                        SELECT features_json, true_label FROM anchor_samples
+                        WHERE  true_label = ?
+                          AND  added_at >= ?
+                          {expiry_clause}
+                        ORDER BY RANDOM() LIMIT ?
+                        """,
+                        (label, recent_cutoff, n)
+                    ).fetchall()
 
-            X_anchors, y_anchors = [], []
-            for feat_json, label in all_rows:
-                feat = self._deserialize_features(feat_json)
-                if feat is not None:
-                    X_anchors.append(feat)
-                    y_anchors.append(label)
+                    if len(recent) >= n:
+                        return recent[:n]
 
-            if not X_anchors:
-                return None, None
+                    # Step 2: Fill remainder from older (non-expired) anchors
+                    older_limit = n - len(recent)
+                    older = conn.execute(
+                        f"""
+                        SELECT features_json, true_label FROM anchor_samples
+                        WHERE  true_label = ?
+                          AND  added_at < ?
+                          {expiry_clause}
+                        ORDER BY RANDOM() LIMIT ?
+                        """,
+                        (label, recent_cutoff, older_limit)
+                    ).fetchall()
 
-            n_benign_loaded   = sum(1 for y in y_anchors if y == 0)
-            n_malicious_loaded = sum(1 for y in y_anchors if y == 1)
-            colors.info(
-                f"[*] AdaptiveLearner: Loaded {len(X_anchors)} anchor samples "
-                f"({n_benign_loaded} benign, {n_malicious_loaded} malicious) "
-                f"to balance the correction batch."
-            )
-            return np.array(X_anchors, dtype=np.float32), np.array(y_anchors, dtype=np.int32)
+                    return recent + older
+            except Exception:
+                return []
 
-        except Exception as e:
-            colors.warning(f"[!] AdaptiveLearner: Anchor loading failed — {e}. Proceeding without anchors.")
+        benign_rows   = _fetch_class(LABEL_BENIGN,    n_benign_anchors)
+        malicious_rows = _fetch_class(LABEL_MALICIOUS, n_malicious_anchors)
+        all_rows = benign_rows + malicious_rows
+
+        if not all_rows:
             return None, None
 
+        X_anchors, y_anchors = [], []
+        for feat_json, label in all_rows:
+            feat = self._deserialize_features(feat_json)
+            if feat is not None:
+                X_anchors.append(feat)
+                y_anchors.append(label)
+
+        if not X_anchors:
+            return None, None
+
+        n_benign_loaded    = sum(1 for y in y_anchors if y == 0)
+        n_malicious_loaded = sum(1 for y in y_anchors if y == 1)
+        colors.info(
+            f"[*] AdaptiveLearner: Loaded {len(X_anchors)} anchor samples "
+            f"({n_benign_loaded} benign, {n_malicious_loaded} malicious) "
+            f"[recent preference active, expiry={ANCHOR_EXPIRY_DAYS}d]"
+        )
+        return np.array(X_anchors, dtype=np.float32), np.array(y_anchors, dtype=np.int32)
+
     def get_anchor_stats(self) -> dict:
-        """Returns anchor store statistics for the GUI display."""
+        """
+        Returns anchor store statistics for the GUI display including
+        staleness breakdown and readiness for safe retraining.
+        """
         try:
+            now = datetime.datetime.now()
+            recent_cutoff = (now - datetime.timedelta(days=ANCHOR_RECENT_DAYS)
+                             ).strftime("%Y-%m-%d %H:%M:%S")
+            expiry_cutoff = None
+            if ANCHOR_EXPIRY_DAYS > 0:
+                expiry_cutoff = (now - datetime.timedelta(days=ANCHOR_EXPIRY_DAYS)
+                                 ).strftime("%Y-%m-%d %H:%M:%S")
+
+            expiry_clause = (
+                f"AND added_at >= '{expiry_cutoff}'" if expiry_cutoff else ""
+            )
+
             with sqlite3.connect(utils.DB_FILE) as conn:
                 total = conn.execute(
                     "SELECT COUNT(*) FROM anchor_samples"
                 ).fetchone()[0]
                 benign = conn.execute(
-                    "SELECT COUNT(*) FROM anchor_samples WHERE true_label = 0"
+                    f"SELECT COUNT(*) FROM anchor_samples "
+                    f"WHERE true_label = 0 {expiry_clause}"
                 ).fetchone()[0]
                 malicious = conn.execute(
-                    "SELECT COUNT(*) FROM anchor_samples WHERE true_label = 1"
+                    f"SELECT COUNT(*) FROM anchor_samples "
+                    f"WHERE true_label = 1 {expiry_clause}"
                 ).fetchone()[0]
+                recent = conn.execute(
+                    f"SELECT COUNT(*) FROM anchor_samples "
+                    f"WHERE added_at >= ? {expiry_clause}",
+                    (recent_cutoff,)
+                ).fetchone()[0]
+                stale = total - recent
+                expired = (conn.execute(
+                    "SELECT COUNT(*) FROM anchor_samples WHERE added_at < ?",
+                    (expiry_cutoff,)
+                ).fetchone()[0] if expiry_cutoff else 0)
+
+            ready_to_train = (
+                benign    >= MIN_ANCHORS_PER_CLASS and
+                malicious >= MIN_ANCHORS_PER_CLASS
+            )
+            balanced = abs(benign - malicious) <= max(2, (benign + malicious) * 0.3)
+
             return {
-                "total":    total,
-                "benign":   benign,
-                "malicious": malicious,
-                "balanced": abs(benign - malicious) <= max(2, total * 0.3),
+                "total":             total,
+                "benign":            benign,
+                "malicious":         malicious,
+                "recent":            recent,
+                "stale":             stale,
+                "expired":           expired,
+                "balanced":          balanced,
+                "ready_to_train":    ready_to_train,
+                "min_per_class":     MIN_ANCHORS_PER_CLASS,
+                "recent_days":       ANCHOR_RECENT_DAYS,
+                "expiry_days":       ANCHOR_EXPIRY_DAYS,
             }
         except Exception:
-            return {"total": 0, "benign": 0, "malicious": 0, "balanced": False}
+            return {
+                "total": 0, "benign": 0, "malicious": 0,
+                "recent": 0, "stale": 0, "expired": 0,
+                "balanced": False, "ready_to_train": False,
+                "min_per_class": MIN_ANCHORS_PER_CLASS,
+                "recent_days": ANCHOR_RECENT_DAYS,
+                "expiry_days": ANCHOR_EXPIRY_DAYS,
+            }
 
     def get_pending_count(self) -> int:
         """Returns PENDING (validated) corrections ready for training."""
@@ -1000,10 +1102,37 @@ class AdaptiveLearner:
             self._write_retraining_log(result, timestamp)
             return result
 
+        # ── Anti-bias Check 1: Minimum anchor threshold ──────────────────────
+        # Block retraining if the anchor store does not have enough confirmed
+        # samples of each class to provide meaningful balance.
+        # This prevents early-deployment bias when the store is too small.
+        anchor_stats = self.get_anchor_stats()
+        n_benign_anchors_available    = anchor_stats.get("benign", 0)
+        n_malicious_anchors_available = anchor_stats.get("malicious", 0)
+
+        if not force and (
+            n_benign_anchors_available    < MIN_ANCHORS_PER_CLASS or
+            n_malicious_anchors_available < MIN_ANCHORS_PER_CLASS
+        ):
+            result["outcome"] = "SKIPPED"
+            result["error_message"] = (
+                f"Anchor store insufficient for safe retraining: "
+                f"{n_benign_anchors_available} benign, "
+                f"{n_malicious_anchors_available} malicious anchors available. "
+                f"Minimum {MIN_ANCHORS_PER_CLASS} of each class required. "
+                f"Confirm more verdicts in Analyst Feedback to build the anchor store. "
+                f"Use Force Retrain to override (not recommended)."
+            )
+            colors.warning(
+                f"[!] AdaptiveLearner: RETRAINING BLOCKED — insufficient anchors.\n"
+                f"    Benign: {n_benign_anchors_available}/{MIN_ANCHORS_PER_CLASS}  "
+                f"Malicious: {n_malicious_anchors_available}/{MIN_ANCHORS_PER_CLASS}\n"
+                f"    Confirm more verdicts in Analyst Feedback to unlock retraining."
+            )
+            self._write_retraining_log(result, timestamp)
+            return result
+
         # ── Anchor sample injection ───────────────────────────────────────────
-        # Mix correctly-classified anchor samples into the batch to prevent
-        # class imbalance drift. The anchor set is biased toward the class
-        # underrepresented in the correction set.
         correction_label_counts = {
             LABEL_BENIGN:    fp_count,
             LABEL_MALICIOUS: fn_count,
@@ -1025,10 +1154,43 @@ class AdaptiveLearner:
             X_combined = np.array(X, dtype=np.float32)
             y_combined = np.array(y, dtype=np.int32)
             colors.warning(
-                "[!] AdaptiveLearner: No anchor samples available yet. "
-                "Retraining on corrections only — class imbalance risk is elevated. "
-                "Anchor samples are added automatically when analysts confirm verdicts."
+                "[!] AdaptiveLearner: No usable anchors loaded. "
+                "Retraining on corrections only — class imbalance risk elevated."
             )
+
+        # ── Anti-bias Check 2: Final imbalance guard ──────────────────────────
+        # Even after anchor injection, check if the combined batch is still
+        # too skewed. If majority:minority ratio exceeds MAX_IMBALANCE_RATIO,
+        # block retraining (unless forced) to prevent model degradation.
+        n_benign_final    = int(np.sum(y_combined == LABEL_BENIGN))
+        n_malicious_final = int(np.sum(y_combined == LABEL_MALICIOUS))
+        majority  = max(n_benign_final, n_malicious_final)
+        minority  = min(n_benign_final, n_malicious_final)
+        imbalance_ratio = majority / max(minority, 1)
+
+        if not force and imbalance_ratio > MAX_IMBALANCE_RATIO:
+            result["outcome"] = "SKIPPED"
+            result["error_message"] = (
+                f"Final batch too imbalanced to retrain safely: "
+                f"{n_benign_final} benign vs {n_malicious_final} malicious "
+                f"(ratio {imbalance_ratio:.1f}:1, limit {MAX_IMBALANCE_RATIO:.1f}:1). "
+                f"Add more anchor samples of the minority class or use Force Retrain."
+            )
+            colors.warning(
+                f"[!] AdaptiveLearner: RETRAINING BLOCKED — batch too imbalanced.\n"
+                f"    Benign: {n_benign_final}  Malicious: {n_malicious_final}  "
+                f"Ratio: {imbalance_ratio:.1f}:1  Limit: {MAX_IMBALANCE_RATIO:.1f}:1\n"
+                f"    Confirm more '{('malicious' if n_malicious_final < n_benign_final else 'benign')}' "
+                f"verdicts to balance the batch."
+            )
+            self._write_retraining_log(result, timestamp)
+            return result
+
+        colors.info(
+            f"[*] AdaptiveLearner: Batch balance check passed — "
+            f"{n_benign_final} benign, {n_malicious_final} malicious "
+            f"(ratio {imbalance_ratio:.1f}:1)"
+        )
 
         X_arr = X_combined
         y_arr = y_combined
@@ -1150,7 +1312,7 @@ class AdaptiveLearner:
             return None
         try:
             import thrember, zlib, base64 as _b64
-            if os.path.getsize(file_path) > 50 * 1024 * 1024:
+            if os.path.getsize(file_path) > 100 * 1024 * 1024:
                 return None
             with open(file_path, "rb") as f:
                 data = f.read()

@@ -276,7 +276,7 @@ def check_internet(host: str = "8.8.8.8", port: int = 53, timeout: int = 3) -> b
 def get_sha256(file_path: str) -> Optional[str]:
     """
     Generates SHA-256 via 4096-byte chunked reading.
-    Chunking ensures 50 MB+ files don't spike RAM. Returns None on I/O error.
+    Chunking ensures large files don't spike RAM. Returns None on I/O error.
     """
     sha256 = hashlib.sha256()
     try:
@@ -312,7 +312,8 @@ def init_db():
                     sha256    TEXT PRIMARY KEY,
                     filename  TEXT,
                     verdict   TEXT,
-                    timestamp TEXT
+                    timestamp TEXT,
+                    apis      TEXT
                 )
             """)
             # Analyst feedback table — powers the learning loop
@@ -494,27 +495,64 @@ def init_db():
         print(f"[-] Threat Cache Initialization Failed: {e}")
 
 
-def save_cached_result(sha256: str, verdict: str, filename: str = "Unknown"):
-    """Commits a scan verdict to the local SQLite cache."""
+def save_cached_result(
+    sha256:        str,
+    verdict:       str,
+    filename:      str = "Unknown",
+    detected_apis: list | None = None,
+):
+    """
+    Commits a scan verdict to the local SQLite cache.
+
+    detected_apis: list of high-risk Windows API names found in the IAT
+    (from ml_engine.get_suspicious_apis). Persisted so the AI analyst report
+    can reference them on cache-hit re-scans without re-running the ML engine.
+    """
+    apis_json = json.dumps(detected_apis or [])
     try:
         with sqlite3.connect(DB_FILE) as conn:
+            # Migrate existing table if apis column is missing
+            cols = {r[1] for r in conn.execute(
+                "PRAGMA table_info(scan_cache)"
+            ).fetchall()}
+            if "apis" not in cols:
+                conn.execute("ALTER TABLE scan_cache ADD COLUMN apis TEXT")
             conn.execute(
-                "INSERT OR REPLACE INTO scan_cache (sha256, filename, verdict, timestamp) VALUES (?, ?, ?, ?)",
-                (sha256, filename, verdict, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+                """INSERT OR REPLACE INTO scan_cache
+                   (sha256, filename, verdict, timestamp, apis)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    sha256, filename, verdict,
+                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    apis_json,
+                ),
             )
     except sqlite3.Error:
         pass
 
 
 def get_cached_result(sha256: str) -> Optional[dict]:
-    """Retrieves a cached scan verdict with full forensic context."""
+    """
+    Retrieves a cached scan verdict with full forensic context including
+    any detected API calls stored from the original ML scan.
+    """
     try:
         with sqlite3.connect(DB_FILE) as conn:
             row = conn.execute(
-                "SELECT verdict, filename, timestamp FROM scan_cache WHERE sha256 = ?", (sha256,)
+                "SELECT verdict, filename, timestamp, apis FROM scan_cache WHERE sha256 = ?",
+                (sha256,)
             ).fetchone()
             if row:
-                return {"verdict": row[0], "source": row[1], "timestamp": row[2]}
+                try:
+                    apis = json.loads(row[3]) if row[3] else []
+                except Exception:
+                    apis = []
+                return {
+                    "verdict":       row[0],
+                    "source":        row[1],
+                    "timestamp":     row[2],
+                    "detected_apis": apis,
+                }
     except sqlite3.Error as e:
         print(f"[-] Cache Read Error: {e}")
     return None

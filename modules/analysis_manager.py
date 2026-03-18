@@ -181,35 +181,35 @@ class ScannerLogic:
 
         prompt = f"""
 [SYSTEM: EDR TRIAGE REPORT GENERATION]
-Target File: {os.path.basename(file_path)}
-Target SHA256: {sha256}
-File Size: {file_size_mb:.2f} MB
-Malware Classification: {family_context}
-AI Confidence Score: {confidence_score:.2f}%
-Extracted Windows APIs:
+Target File    : {os.path.basename(file_path)}
+Target SHA256  : {sha256}
+File Size      : {file_size_mb:.2f} MB
+Classification : {family_context}
+AI Confidence  : {confidence_score:.2f}%
+Detected APIs  : {'YES — see list below' if detected_apis else 'NONE (file may be packed, obfuscated, or a script)'}
 {api_context}
 
 TASK: Generate a highly technical malware triage report for a Tier 2 SOC Analyst.
-If specific APIs are listed, explain EXACTLY how they are chained to perform malicious actions.
-Map APIs to MITRE ATT&CK tactics (e.g., Process Injection, Credential Access).
-Do not use conversational filler. Do not introduce yourself.
+Do not use conversational filler. Do not introduce yourself. Be concise and factual.
 
-Format output EXACTLY using these four headers:
+{'If specific APIs are listed, explain EXACTLY how they chain to perform malicious actions and map to MITRE ATT&CK.' if detected_apis else 'No APIs were extracted. Focus the analysis on what the absence of APIs implies (packing, obfuscation, non-PE file type) and what dynamic analysis steps are recommended.'}
+
+Format output EXACTLY using these headers:
 
 ### 🔴 Threat Classification
-(1-2 sentences explaining the core threat and mechanism.)
+(1-2 sentences: core threat type and detection mechanism.)
 
 ### ⚙️ API Behavioral Analysis
-(Explain the technical intent behind each API detected. If none, explain evasion tactics.)
+{'(Technical intent behind each API detected, with MITRE ATT&CK mapping.)' if detected_apis else '(Explain why no APIs were found: packing, API hashing, dynamic loading, or non-PE. Do NOT fabricate API analysis that was not observed.)'}
 
 ### ⚠️ System Impact & Risk
 (Concrete impact: data exfiltration, persistence, lateral movement potential.)
 
 ### 🛡️ Recommended Mitigation
-(Actionable, technical isolation steps beyond standard quarantine.)
+(Actionable technical steps beyond standard quarantine.)
 
 ### 🎯 Generated YARA Rule
-(Valid YARA rule. Condition section MUST check PE magic byte: `uint16(0) == 0x5A4D`.)
+{'(Write a YARA rule using the specific API strings above as detection strings. The condition must require the PE magic byte AND at least 2 of the API strings. Example: uint16(0) == 0x5A4D and 2 of ($api*))' if detected_apis else '(No meaningful YARA rule can be generated without detected API strings. Write a brief YARA rule that uses file size and entropy as heuristics instead, and add a comment explaining that a behaviour-based rule requires dynamic analysis. Do NOT use only the MZ magic byte as the condition — that would match every PE file on the system.)'}
 """
 
 
@@ -234,7 +234,8 @@ Format output EXACTLY using these four headers:
     # ─────────────────────────────────────────────
 
     def _prompt_quarantine(self, file_path, sha256, threat_source, verdict,
-                           filename="", ai_already_done=False):
+                           filename="", ai_already_done=False,
+                           detected_apis=None):
         """
         Tier 4 containment — called for every malicious verdict.
         Modes:
@@ -369,17 +370,24 @@ Format output EXACTLY using these four headers:
                 spinner.start()
                 report = self.generate_llm_report(
                     family_name="Unknown - Cloud/Signature Detection",
-                    detected_apis=[],
+                    detected_apis=detected_apis or [],
                     file_path=file_path or "",
                     confidence_score=100.0,
                     sha256=sha256,
                     file_size_mb=0.0,
                 )
                 spinner.stop()
-                self.log_event("--- AI Analyst Report ---")
-                self.log_event(report)
+                # Save report to session log for the .txt export
+                self.session_log.append("--- AI Analyst Report ---")
+                self.session_log.append(report)
                 if gui and "ai_report" in gui:
+                    # GUI mode: _show_ai_report handles both the dialog
+                    # and the console echo — do not double-print via log_event
                     gui["ai_report"](report)
+                else:
+                    # CLI mode: print directly since there is no GUI callback
+                    self.log_event("--- AI Analyst Report ---")
+                    self.log_event(report)
             else:
                 self.log_event("[*] AI report skipped.")
 
@@ -489,16 +497,23 @@ Format output EXACTLY using these four headers:
                 file_size_mb,
             )
             spinner.stop()
-            self.log_event("\n--- AI Analyst Report ---")
-            self.log_event(report)
+            # Save to session log for .txt export
+            self.session_log.append("\n--- AI Analyst Report ---")
+            self.session_log.append(report)
             if gui and "ai_report" in gui:
+                # GUI mode: _show_ai_report handles dialog + console echo
                 gui["ai_report"](report)
+            else:
+                # CLI mode: print directly
+                self.log_event("\n--- AI Analyst Report ---")
+                self.log_event(report)
         else:
             self.log_event("[*] AI report skipped.")
 
         self._prompt_quarantine(
             file_path, sha256, "Local ML Engine", "CRITICAL RISK",
-            ai_already_done=True
+            ai_already_done=True,
+            detected_apis=ml_result.get("detected_apis", []),
         )
 
     # ─────────────────────────────────────────────
@@ -539,6 +554,9 @@ Format output EXACTLY using these four headers:
             self.log_event(f"    Verdict    : {cached['verdict']}")
             self.log_event(f"    Cached On  : {cached['timestamp']}")
             self.log_event(f"    Source     : {cached['source']}")
+            cached_apis = cached.get("detected_apis", [])
+            if cached_apis:
+                self.log_event(f"    Cached APIs: {', '.join(cached_apis)}")
             # Malicious cache hits must still trigger webhook and quarantine — not silently return.
             cached_verdict = cached['verdict'].upper()
             if any(v in cached_verdict for v in ("MALICIOUS", "CRITICAL")):
@@ -547,6 +565,7 @@ Format output EXACTLY using these four headers:
                     f"Cache Hit ({cached['source']})",
                     cached['verdict'],
                     filename,
+                    detected_apis=cached_apis,
                 )
             return
 
@@ -586,23 +605,49 @@ Format output EXACTLY using these four headers:
 
         if cloud_verdict:
             intel_context = f"{filename} | Tier 1: {cloud_context}"
-            utils.save_cached_result(sha256, cloud_verdict, intel_context)
 
             if cloud_verdict == "MALICIOUS":
                 colors.critical(f"\n[!] TIER 1 VERDICT: MALICIOUS — detected by {cloud_context}")
                 self.session_log.append(f"[!] TIER 1 VERDICT: MALICIOUS — {cloud_context}")
 
-                if file_size_mb > 50.0:
+                # Extract API calls from the file's Import Address Table so the
+                # AI analyst report has behavioral context even though Tier 2 ML
+                # was not needed to confirm the verdict.
+                # This is a read-only IAT parse — no LightGBM inference runs.
+                cloud_apis = []
+                if file_path and os.path.isfile(file_path) and file_size_mb <= 100.0:
+                    try:
+                        cloud_apis = self.ml_scanner.get_suspicious_apis(file_path)
+                        if cloud_apis:
+                            self.log_event(
+                                f"[*] IAT analysis: {len(cloud_apis)} suspicious API(s) found — "
+                                + ", ".join(cloud_apis[:5])
+                                + (" ..." if len(cloud_apis) > 5 else "")
+                            )
+                    except Exception:
+                        pass  # Non-critical — report proceeds without API context
+
+                # Save APIs to cache so future cache-hit reports also have them
+                utils.save_cached_result(
+                    sha256, cloud_verdict, intel_context,
+                    detected_apis=cloud_apis,
+                )
+
+                if file_size_mb > 100.0:
                     self.log_event(f"[!] File ({file_size_mb:.2f} MB) exceeds ML limit — skipping Tier 2.")
                 # Quarantine fires for all cloud MALICIOUS verdicts regardless of file size.
-                self._prompt_quarantine(file_path, sha256, cloud_context, "MALICIOUS", filename)
+                self._prompt_quarantine(
+                    file_path, sha256, cloud_context, "MALICIOUS", filename,
+                    detected_apis=cloud_apis,
+                )
                 return
             else:
                 colors.success(f"\n[+] TIER 1 VERDICT: SAFE — {cloud_context}")
                 self.session_log.append(f"[+] TIER 1 VERDICT: SAFE")
+                utils.save_cached_result(sha256, cloud_verdict, intel_context)
 
         # ── Tier 2: Local ML ────────────────────────────────────────────────
-        if file_size_mb > 50.0:
+        if file_size_mb > 100.0:
             self.log_event(f"[!] File ({file_size_mb:.2f} MB) exceeds ML extraction limit. Tier 2 skipped.")
             return
 
@@ -625,7 +670,12 @@ Format output EXACTLY using these four headers:
 
         self.session_log.append(f"[*] TIER 2: {ml_verdict} ({score_pct:.2%})")
         ml_context = f"{filename} | Tier 2: Local ML ({score_pct:.2%})"
-        utils.save_cached_result(sha256, ml_verdict, ml_context)
+        # Save detected APIs alongside the verdict so cache-hit re-scans
+        # can pass them to the AI analyst report without re-running the ML engine.
+        utils.save_cached_result(
+            sha256, ml_verdict, ml_context,
+            detected_apis=ml_result.get("detected_apis", []),
+        )
 
         # ── Novel Feature: Dynamic Risk Scoring ──────────────────────────────
         # Compute context-aware composite risk score combining ML verdict,
@@ -763,7 +813,7 @@ Format output EXACTLY using these four headers:
     def save_session_log(self):
         """
         Writes the session log to a timestamped .txt file.
-        GUI mode: auto-saves without prompting.
+        GUI mode: shows a save-session dialog with custom filename option.
         CLI mode: interactive filename prompt.
         """
         if not self.session_log:
@@ -777,19 +827,190 @@ Format output EXACTLY using these four headers:
         os.makedirs(analysis_dir, exist_ok=True)
 
         if gui:
-            # Auto-save with timestamp — no blocking prompt in GUI mode
-            ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"scan_report_{ts}.txt"
-            filepath = os.path.join(analysis_dir, filename)
+            # GUI mode — show a non-blocking save dialog via signal
+            import threading
+            done = threading.Event()
+
+            def _show_save_dialog():
+                try:
+                    from PyQt6.QtWidgets import (
+                        QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+                        QLineEdit, QPushButton, QCheckBox
+                    )
+                    import datetime as _dt
+
+                    default_name = (
+                        "scan_report_"
+                        + _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    )
+
+                    # Color constants — hardcoded here because analysis_manager.py
+                    # must not import from gui.py. These match the CyberSentinel THEME.
+                    _BG      = "#161b22"
+                    _SURFACE = "#0d1117"
+                    _BLUE    = "#58a6ff"
+                    _TEXT    = "#e6edf3"
+                    _MUTED   = "#8b949e"
+                    _BORDER  = "#30363d"
+
+                    dlg = QDialog()
+                    dlg.setWindowTitle("Save Scan Session")
+                    dlg.setFixedWidth(480)
+                    dlg.setStyleSheet(f"""
+                        QDialog {{
+                            background: {_BG};
+                        }}
+                        QLabel {{
+                            color: {_TEXT};
+                            border: none;
+                        }}
+                        QLineEdit {{
+                            background: {_SURFACE};
+                            color: {_TEXT};
+                            border: 1px solid {_BORDER};
+                            border-radius: 4px;
+                            padding: 6px 10px;
+                            font-size: 12px;
+                            selection-background-color: {_BLUE};
+                        }}
+                        QLineEdit:focus {{
+                            border: 1px solid {_BLUE};
+                        }}
+                        QPushButton {{
+                            background: {_BG};
+                            color: {_TEXT};
+                            border: 1px solid {_BORDER};
+                            border-radius: 4px;
+                            padding: 6px 16px;
+                            font-size: 11px;
+                        }}
+                        QPushButton:hover {{
+                            background: #21262d;
+                            border-color: {_TEXT};
+                        }}
+                        QPushButton#primary {{
+                            background: {_BLUE};
+                            color: #ffffff;
+                            border: none;
+                            font-weight: bold;
+                        }}
+                        QPushButton#primary:hover {{
+                            background: #388bfd;
+                        }}
+                    """)
+                    layout = QVBoxLayout(dlg)
+                    layout.setContentsMargins(24, 24, 24, 20)
+                    layout.setSpacing(14)
+
+                    # Header
+                    header = QLabel("💾  Save Scan Session Report")
+                    header.setStyleSheet(
+                        f"color: {_BLUE}; font-size: 14px; "
+                        f"font-weight: bold; border: none;"
+                    )
+                    layout.addWidget(header)
+
+                    # Summary of what will be saved
+                    n_lines = len(self.session_log)
+                    summary = QLabel(
+                        f"The current session contains <b>{n_lines}</b> log entries.<br>"
+                        f"The report will be saved to: <code>Analysis Files\\</code>"
+                    )
+                    summary.setStyleSheet(
+                        f"color: {_MUTED}; font-size: 11px; "
+                        f"background: #0d1117; border: 1px solid {_BORDER}; "
+                        f"border-radius: 4px; padding: 10px;"
+                    )
+                    summary.setWordWrap(True)
+                    layout.addWidget(summary)
+
+                    # Filename input
+                    fname_row = QHBoxLayout()
+                    fname_lbl = QLabel("Filename:")
+                    fname_lbl.setFixedWidth(72)
+                    fname_lbl.setStyleSheet(f"color: {_TEXT}; font-size: 11px; border: none;")
+                    fname_input = QLineEdit(default_name)
+                    fname_input.setPlaceholderText("e.g. my_scan_report")
+                    fname_row.addWidget(fname_lbl)
+                    fname_row.addWidget(fname_input)
+                    ext_lbl = QLabel(".txt")
+                    ext_lbl.setStyleSheet(f"color: {_MUTED}; font-size: 11px; border: none;")
+                    fname_row.addWidget(ext_lbl)
+                    layout.addLayout(fname_row)
+
+                    # Divider
+                    from PyQt6.QtWidgets import QFrame
+                    divider = QFrame()
+                    divider.setFrameShape(QFrame.Shape.HLine)
+                    divider.setStyleSheet(f"color: {_BORDER};")
+                    layout.addWidget(divider)
+
+                    # Buttons
+                    btn_row = QHBoxLayout()
+                    save_btn = QPushButton("💾  Save Report")
+                    save_btn.setObjectName("primary")
+                    save_btn.setFixedWidth(140)
+                    save_btn.setFixedHeight(32)
+                    skip_btn = QPushButton("Skip")
+                    skip_btn.setFixedWidth(80)
+                    skip_btn.setFixedHeight(32)
+                    btn_row.addStretch()
+                    btn_row.addWidget(save_btn)
+                    btn_row.addWidget(skip_btn)
+                    layout.addLayout(btn_row)
+
+                    def _do_save():
+                        raw = fname_input.text().strip() or default_name
+                        # Sanitize — remove path separators and dangerous chars
+                        import re
+                        safe = re.sub(r'[\\/:*?"<>|]', '_', raw)
+                        if not safe.endswith(".txt"):
+                            safe += ".txt"
+                        filepath = os.path.join(analysis_dir, safe)
+                        # Avoid overwrite silently — append timestamp if exists
+                        if os.path.exists(filepath):
+                            import datetime as _dt2
+                            ts = _dt2.datetime.now().strftime("_%H%M%S")
+                            safe = safe.replace(".txt", f"{ts}.txt")
+                            filepath = os.path.join(analysis_dir, safe)
+                        try:
+                            with open(filepath, "w", encoding="utf-8") as f:
+                                f.write("=" * 60 + "\n")
+                                f.write(" CYBERSENTINEL v2 — SCAN SESSION REPORT\n")
+                                f.write(
+                                    f" Generated : {_dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                                )
+                                f.write("=" * 60 + "\n\n")
+                                f.write("\n".join(self.session_log))
+                                f.write("\n\n" + "=" * 60 + "\n")
+                                f.write(" END OF REPORT\n")
+                                f.write("=" * 60 + "\n")
+                            self.log_event(
+                                f"[+] Session report saved: Analysis Files\\{safe}"
+                            )
+                        except Exception as e:
+                            self.log_event(f"[-] Report save failed: {e}")
+                        dlg.accept()
+
+                    save_btn.clicked.connect(_do_save)
+                    skip_btn.clicked.connect(dlg.reject)
+                    dlg.exec()
+
+                except Exception as e:
+                    print(f"[-] Save dialog error: {e}")
+                finally:
+                    done.set()
+
+            # Run on main Qt thread
             try:
-                with open(filepath, "w", encoding="utf-8") as f:
-                    f.write("=" * 60 + "\n CYBERSENTINEL SCAN REPORT\n")
-                    f.write(f" Generated: {datetime.datetime.now()}\n" + "=" * 60 + "\n")
-                    f.write("\n".join(self.session_log))
-                    f.write("\n" + "=" * 60 + "\n END OF REPORT\n" + "=" * 60 + "\n")
-                self.log_event(f"[+] Session report auto-saved: {filename}")
-            except Exception as e:
-                self.log_event(f"[-] Report save error: {e}")
+                from PyQt6.QtCore import QMetaObject, Qt
+                # Use the existing main-thread signal if available
+                if hasattr(self, '_run_on_main_signal'):
+                    self._run_on_main_signal.emit(_show_save_dialog)
+                else:
+                    _show_save_dialog()
+            except Exception:
+                _show_save_dialog()
             return
 
         # CLI interactive path
