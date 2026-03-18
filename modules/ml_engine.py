@@ -65,6 +65,15 @@ class LocalScanner:
             print(f"[-] Model file '{path}' not found.")
             return None
 
+        # D1 Fix: Verify model file integrity before loading.
+        # Detects tampering or accidental corruption — a modified model that
+        # always returns SAFE would silently disable Tier 2 detection.
+        if not self._verify_model_integrity(path):
+            print(f"[!] WARNING: Model integrity check failed for '{path}'.")
+            print("[!] The model file may have been tampered with or corrupted.")
+            print("[!] Tier 2 ML scanning disabled until model is verified.")
+            return None
+
         spinner = Spinner("[*] Loading ML model...")
         spinner.start()
         try:
@@ -75,6 +84,51 @@ class LocalScanner:
             spinner.stop()
             print(f"[-] Failed to load ML model: {e}")
             return None
+
+    def _verify_model_integrity(self, model_path: str) -> bool:
+        """
+        Verifies the model file against a stored SHA-256 hash.
+
+        On first load (no hash file exists), computes and stores the hash —
+        Trust On First Use (TOFU). On subsequent loads, compares against stored hash.
+        If the hash file is missing after first use, that itself is a warning sign.
+
+        Returns True if the model is unmodified, False if tampering is detected.
+        """
+        import hashlib
+        hash_path = model_path + ".sha256"
+
+        try:
+            actual_hash = hashlib.sha256(
+                open(model_path, "rb").read()
+            ).hexdigest()
+        except Exception as e:
+            print(f"[-] Cannot hash model file: {e}")
+            return False
+
+        if not os.path.exists(hash_path):
+            # First use — store hash (TOFU)
+            try:
+                with open(hash_path, "w") as f:
+                    f.write(actual_hash)
+                print(f"[*] Model integrity baseline created: {os.path.basename(hash_path)}")
+                return True
+            except Exception:
+                return True   # Cannot write hash file — proceed with warning
+
+        try:
+            expected_hash = open(hash_path).read().strip()
+        except Exception:
+            print("[!] Cannot read model hash file.")
+            return True   # Cannot verify — proceed cautiously
+
+        if actual_hash != expected_hash:
+            print(f"[!] Model hash mismatch!")
+            print(f"    Expected : {expected_hash}")
+            print(f"    Actual   : {actual_hash}")
+            return False
+
+        return True
 
     # ─────────────────────────────────────────────
     #  FEATURE EXTRACTION

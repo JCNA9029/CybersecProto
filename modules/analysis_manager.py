@@ -51,6 +51,19 @@ class ScannerLogic:
         self.correlator    = ChainCorrelator()
         self.baseline      = BaselineEngine()
         utils.init_db()
+        # R1 Fix: Prune records older than 90 days at startup to prevent
+        # unbounded database growth in long-running daemon deployments.
+        try:
+            utils.prune_old_records(days=90)
+        except Exception:
+            pass   # Non-critical — startup continues regardless
+
+        # Scenario 3 Fix: Pre-extracted feature cache.
+        # Stores compressed feature vectors keyed by sha256, extracted BEFORE
+        # quarantine runs so feedback/adaptive-learning has them even after the
+        # original file has been moved or encrypted.
+        # Entries are removed immediately after the feedback dialog consumes them.
+        self._prefetch_features_cache: dict = {}
 
     # ─────────────────────────────────────────────
     #  LOGGING
@@ -228,10 +241,35 @@ Format output EXACTLY using these four headers:
           headless_mode=True  : auto-quarantine + isolate (daemon)
           gui_callbacks set   : Qt dialogs instead of input() (GUI)
           neither             : standard CLI input() prompts
-        gui_callbacks keys: "ask" (str)->bool, "ai_report" (str)->None
+        gui_callbacks keys: "ask" (str)->bool, "ai_report" (str)->None,
+                            "feedback" (sha256,fname,file_path,verdict)->None
+
+        Scenario 3 Fix:
+          Step 0.5 pre-extracts PE features BEFORE Step 4 quarantine runs,
+          so adaptive learning has valid feature vectors even when the analyst
+          approves quarantine and the original file is moved/encrypted.
+          For ML-detected threats the already-computed features are reused
+          from _prefetch_features_cache (populated by _handle_critical_ml_threat)
+          so no double extraction occurs.
         """
         fname = filename or (os.path.basename(file_path) if file_path else sha256)
         gui   = getattr(self, "gui_callbacks", None)
+
+        # ── Step 0.5: Pre-extract features BEFORE quarantine ─────────────────
+        # This is the Scenario 3 fix. If features are not already cached
+        # (Path B: ML engine pre-cached them in _handle_critical_ml_threat),
+        # extract them now while the file is guaranteed to still be on disk.
+        # This runs silently — it never blocks or changes the user-visible flow.
+        if sha256 not in self._prefetch_features_cache:
+            if file_path and os.path.isfile(file_path):
+                try:
+                    from .adaptive_learner import get_learner
+                    fj = get_learner()._extract_and_serialize(file_path)
+                    if fj:
+                        self._prefetch_features_cache[sha256] = fj
+                        self.log_event("[*] Features cached for adaptive learning.")
+                except Exception:
+                    pass  # Non-critical — learning degrades gracefully without features
 
         # Step 1: Webhook — always fires first
         if self.webhook_url:
@@ -298,8 +336,18 @@ Format output EXACTLY using these four headers:
         else:
             n = input("[?] Isolate host network? (Y/N): ").strip().upper() == "Y"
         if n:
-            network_isolation.isolate_network()
-            colors.critical("[!] Network isolated.")
+            # R4 Fix: Check return value — isolation can fail silently
+            # if the Windows Firewall service is disabled or lacks privileges.
+            isolated = network_isolation.isolate_network()
+            if isolated:
+                colors.critical("[!] Network isolated — restore via Network page when safe.")
+                self.session_log.append("[!] NETWORK ISOLATED")
+            else:
+                colors.warning(
+                    "[!] Network isolation FAILED — machine may still be connected. "
+                    "Check Administrator privileges and Firewall service status."
+                )
+                self.session_log.append("[!] ISOLATION FAILED")
         else:
             colors.warning("[*] Network isolation skipped.")
 
@@ -335,11 +383,25 @@ Format output EXACTLY using these four headers:
             else:
                 self.log_event("[*] AI report skipped.")
 
-        # Step 7: Feedback
+        # Step 7: Analyst Feedback
+        # Retrieve pre-extracted features from cache — these were captured in
+        # Step 0.5 before quarantine ran, so they are available even if the
+        # file no longer exists on disk.
+        prefetched_fj = self._prefetch_features_cache.pop(sha256, None)
+
         if gui:
-            self.log_event(f"[*] Verdict logged: {verdict}. Review in Analyst Feedback tab.")
+            if "feedback" in gui:
+                gui["feedback"](sha256, fname, file_path or "", verdict,
+                                prefetched_fj)
+            else:
+                self.log_event(
+                    f"[*] Verdict logged: {verdict}. "
+                    f"Review in Analyst Feedback tab."
+                )
         else:
-            prompt_analyst_feedback(sha256, fname, verdict, file_path=file_path or "")
+            prompt_analyst_feedback(sha256, fname, verdict,
+                                    file_path=file_path or "",
+                                    prefetched_features_json=prefetched_fj)
 
     # ─────────────────────────────────────────────
     #  ML THREAT HANDLER
@@ -380,6 +442,22 @@ Format output EXACTLY using these four headers:
                 self.log_event(f"[*] STAGE 2: {fam_name} ({conf:.2%} confidence)")
         else:
             self.log_event("[*] Stage 2 skipped.")
+
+        # Scenario 3 Fix (Path B):
+        # The ML engine already extracted the feature vector during scan_stage1().
+        # Serialize and cache it NOW before deleting it from memory, so
+        # _prompt_quarantine Step 0.5 finds it pre-populated and skips
+        # re-extraction entirely. This avoids double I/O on the file.
+        if features is not None and sha256 not in self._prefetch_features_cache:
+            try:
+                import json as _json, zlib as _zlib, base64 as _b64
+                raw  = _json.dumps(features.tolist()).encode("utf-8")
+                comp = _zlib.compress(raw, level=6)
+                self._prefetch_features_cache[sha256] = (
+                    "z:" + _b64.b64encode(comp).decode("ascii")
+                )
+            except Exception:
+                pass  # Non-critical — Step 0.5 will attempt fresh extraction
 
         # Release the feature array immediately to prevent memory growth in long-running daemon mode.
         if features is not None:
@@ -618,6 +696,19 @@ Format output EXACTLY using these four headers:
 
     def scan_hash(self, file_hash: str):
         """Hash-only pipeline: Cache → concurrent Tier 1 cloud consensus."""
+        # V4 Fix: Validate hash format before any API call.
+        # Accepts only hex strings of exactly 32 (MD5), 40 (SHA-1), or 64 (SHA-256) chars.
+        # Rejects anything that could be used for URL injection into the API endpoint paths.
+        import re as _re
+        if not _re.fullmatch(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", file_hash.strip()):
+            short = file_hash[:32]
+            colors.error(
+                f"[-] Invalid hash rejected: '{short}...'. "
+                "Must be a hex string of 32 (MD5), 40 (SHA-1), or 64 (SHA-256) chars."
+            )
+            return
+        file_hash = file_hash.strip().lower()
+
         self.log_event("─" * 60)
         colors.info(f"[*] Manual Hash Scan: {file_hash}")
         self.session_log.append(f"[*] Manual Hash Scan: {file_hash}")

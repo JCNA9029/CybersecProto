@@ -16,13 +16,18 @@ from . import colors
 # ─────────────────────────────────────────────
 
 def prompt_analyst_feedback(
-    sha256: str,
-    filename: str,
-    original_verdict: str,
-    file_path: str = "",
+    sha256:                   str,
+    filename:                 str,
+    original_verdict:         str,
+    file_path:                str = "",
+    prefetched_features_json: str | None = None,
 ) -> str | None:
     """
     Post-scan review prompt for CLI mode.
+
+    prefetched_features_json: compressed feature vector pre-extracted before
+    quarantine ran (Scenario 3 fix). When provided, adaptive learning works
+    even if the original file has been quarantined or deleted by this point.
 
     Returns:
         'CONFIRMED'      — analyst agrees with the verdict
@@ -48,21 +53,23 @@ def prompt_analyst_feedback(
     if choice == "Y":
         analyst_verdict = "CONFIRMED"
         print("  [+] Verdict confirmed. Logged.")
-        # Register as anchor sample to stabilize future retraining batches
-        _register_anchor(sha256, filename, file_path, original_verdict)
+        _register_anchor(sha256, filename, file_path, original_verdict,
+                         prefetched_features_json)
 
     elif choice == "F":
         analyst_verdict = "FALSE_POSITIVE"
         notes = input("  [?] Reason / notes (optional, Enter to skip): ").strip()
         _add_to_exclusions(filename)
         colors.success(f"  [+] Marked as False Positive. '{filename}' added to exclusion list.")
-        _queue_ml_correction(sha256, filename, file_path, "FALSE_POSITIVE", original_verdict, notes)
+        _queue_ml_correction(sha256, filename, file_path, "FALSE_POSITIVE",
+                             original_verdict, notes, prefetched_features_json)
 
     else:  # N — False Negative
         analyst_verdict = "FALSE_NEGATIVE"
         notes = input("  [?] Reason / notes (optional, Enter to skip): ").strip()
         colors.warning(f"  [!] Marked as False Negative. Queuing ML correction for '{filename}'.")
-        _queue_ml_correction(sha256, filename, file_path, "FALSE_NEGATIVE", original_verdict, notes)
+        _queue_ml_correction(sha256, filename, file_path, "FALSE_NEGATIVE",
+                             original_verdict, notes, prefetched_features_json)
 
     _save_feedback(sha256, filename, original_verdict, analyst_verdict, notes)
     return analyst_verdict
@@ -73,16 +80,21 @@ def prompt_analyst_feedback(
 # ─────────────────────────────────────────────
 
 def _queue_ml_correction(
-    sha256:           str,
-    filename:         str,
-    file_path:        str,
-    correction_type:  str,
-    original_verdict: str,
-    analyst_notes:    str = "",
+    sha256:                   str,
+    filename:                 str,
+    file_path:                str,
+    correction_type:          str,
+    original_verdict:         str,
+    analyst_notes:            str = "",
+    prefetched_features_json: str | None = None,
 ):
     """
     Dispatches a correction to the AdaptiveLearner queue.
-    Wrapped in a try/except so a learner failure never crashes the feedback flow.
+
+    prefetched_features_json: compressed feature vector captured before
+    quarantine ran (Scenario 3 fix). When provided, schedule_correction
+    uses it directly instead of attempting to re-read the (now missing) file.
+    Wrapped in try/except so a learner failure never crashes the feedback flow.
     """
     try:
         from .adaptive_learner import get_learner
@@ -94,27 +106,25 @@ def _queue_ml_correction(
             correction_type=correction_type,
             original_verdict=original_verdict,
             analyst_notes=analyst_notes,
+            prefetched_features_json=prefetched_features_json,
         )
     except Exception as e:
         colors.warning(f"[!] AdaptiveLearner queue error (non-fatal): {e}")
 
 
 def _register_anchor(
-    sha256:           str,
-    filename:         str,
-    file_path:        str,
-    original_verdict: str,
+    sha256:                   str,
+    filename:                 str,
+    file_path:                str,
+    original_verdict:         str,
+    prefetched_features_json: str | None = None,
 ):
     """
     Registers a CONFIRMED verdict as an anchor sample in the adaptive learner.
 
-    Anchors are correctly-classified examples used to stabilize retraining
-    batches against class imbalance. A CONFIRMED MALICIOUS verdict registers
-    as a malicious anchor (label=1). A CONFIRMED SAFE verdict registers as
-    a benign anchor (label=0).
-
-    Only called when the analyst explicitly confirms the verdict is correct,
-    ensuring anchors represent genuine ground truth.
+    prefetched_features_json: compressed feature vector captured before
+    quarantine ran (Scenario 3 fix). When provided, register_anchor uses it
+    directly so confirmed verdicts work even after the file is quarantined.
     """
     try:
         from .adaptive_learner import get_learner, LABEL_MALICIOUS, LABEL_BENIGN
@@ -133,6 +143,7 @@ def _register_anchor(
             file_path=file_path,
             true_label=true_label,
             source=source,
+            prefetched_features_json=prefetched_features_json,
         )
         if ok:
             colors.success(
@@ -145,31 +156,41 @@ def _register_anchor(
 
 
 def submit_gui_correction(
-    sha256:           str,
-    filename:         str,
-    file_path:        str,
-    analyst_verdict:  str,   # 'FALSE_POSITIVE' | 'FALSE_NEGATIVE' | 'CONFIRMED'
-    original_verdict: str,
-    notes:            str = "",
+    sha256:                   str,
+    filename:                 str,
+    file_path:                str,
+    analyst_verdict:          str,   # 'FALSE_POSITIVE' | 'FALSE_NEGATIVE' | 'CONFIRMED'
+    original_verdict:         str,
+    notes:                    str = "",
+    prefetched_features_json: str | None = None,
 ):
     """
     GUI entry point — called when the analyst submits a review from the
-    Analyst Feedback page. Saves feedback and dispatches ML correction if needed.
+    inline post-scan dialog or the Analyst Feedback page.
 
-    CONFIRMED verdicts are registered as anchor samples to stabilize future
-    retraining batches. Anchors prevent class imbalance drift by providing
-    correctly-labelled ground truth examples alongside every correction batch.
+    prefetched_features_json: compressed feature vector captured in Step 0.5
+    of _prompt_quarantine before the file was quarantined (Scenario 3 fix).
+    When provided, adaptive learning works even if the original file is gone.
+
+    CONFIRMED verdicts register as anchors to stabilize future retraining batches.
+    FALSE_POSITIVE/NEGATIVE verdicts queue ML corrections for incremental retraining.
     """
     _save_feedback(sha256, filename, original_verdict, analyst_verdict, notes)
 
     if analyst_verdict in ("FALSE_POSITIVE", "FALSE_NEGATIVE"):
         if analyst_verdict == "FALSE_POSITIVE":
             _add_to_exclusions(filename)
-        _queue_ml_correction(sha256, filename, file_path, analyst_verdict, original_verdict, notes)
+        _queue_ml_correction(
+            sha256, filename, file_path,
+            analyst_verdict, original_verdict, notes,
+            prefetched_features_json,
+        )
 
     elif analyst_verdict == "CONFIRMED":
-        # Register as anchor — correctly-classified sample for retraining stability
-        _register_anchor(sha256, filename, file_path, original_verdict)
+        _register_anchor(
+            sha256, filename, file_path, original_verdict,
+            prefetched_features_json,
+        )
 
 
 # ─────────────────────────────────────────────

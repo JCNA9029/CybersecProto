@@ -1061,7 +1061,173 @@ class CyberSentinelGUI(QMainWindow):
             "ask":       self._gui_ask,
             "ai_report": lambda report: self._show_ai_report(report, console),
             "engine":    self._gui_get_engine,
+            "feedback":  self._gui_feedback_dialog,
         }
+
+    def _gui_feedback_dialog(
+        self,
+        sha256:                   str,
+        filename:                 str,
+        file_path:                str,
+        verdict:                  str,
+        prefetched_features_json: str | None = None,
+    ):
+        """
+        Shows an inline post-scan analyst feedback dialog immediately after a
+        malicious verdict while the scan context (file_path) is still available.
+
+        This is the correct integration point for Adaptive Learning because:
+          - file_path is known here → PE features can be extracted
+          - The analyst reviews the verdict while it is fresh
+          - CONFIRMED submissions register as anchors with real feature vectors
+          - FP/FN submissions queue corrections with real feature vectors
+
+        Called from _prompt_quarantine Step 7 in GUI mode.
+        Previously this step only printed "Review in Analyst Feedback tab"
+        and discarded the file_path, making adaptive learning impossible.
+        """
+        import threading
+        done = threading.Event()
+
+        def _show():
+            try:
+                from PyQt6.QtWidgets import (
+                    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+                    QComboBox, QLineEdit, QPushButton, QFrame
+                )
+
+                dlg = QDialog(self)
+                dlg.setWindowTitle("Analyst Verdict Review")
+                dlg.setMinimumWidth(520)
+                dlg.setStyleSheet(f"QDialog {{ background: {THEME['surface']}; }}")
+                layout = QVBoxLayout(dlg)
+                layout.setSpacing(12)
+                layout.setContentsMargins(20, 20, 20, 20)
+
+                # Header
+                header = QLabel("Analyst Verdict Review")
+                header.setStyleSheet(
+                    f"color: {THEME['blue']}; font-size: 14px; font-weight: bold;"
+                )
+                layout.addWidget(header)
+
+                # File info
+                info_frame = QFrame()
+                info_frame.setStyleSheet(
+                    f"background: #0a0e14; border: 1px solid {THEME['border']}; "
+                    f"border-radius: 4px; padding: 8px;"
+                )
+                info_layout = QVBoxLayout(info_frame)
+                info_layout.setSpacing(4)
+                for label, value, color in [
+                    ("File",    filename,         THEME["text"]),
+                    ("SHA-256", sha256[:32]+"...", THEME["muted"]),
+                    ("Verdict", verdict,
+                     THEME["red"] if "MALICIOUS" in verdict.upper() else THEME["yellow"]),
+                ]:
+                    row = QHBoxLayout()
+                    lbl = QLabel(f"{label}:")
+                    lbl.setFixedWidth(60)
+                    lbl.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px; border: none;")
+                    val = QLabel(value)
+                    val.setStyleSheet(f"color: {color}; font-size: 11px; border: none;")
+                    row.addWidget(lbl)
+                    row.addWidget(val)
+                    row.addStretch()
+                    info_layout.addLayout(row)
+                layout.addWidget(info_frame)
+
+                # Verdict selector
+                verdict_row = QHBoxLayout()
+                verdict_lbl = QLabel("Your assessment:")
+                verdict_lbl.setStyleSheet(f"color: {THEME['text']}; border: none;")
+                verdict_combo = QComboBox()
+                verdict_combo.addItems(["CONFIRMED", "FALSE_POSITIVE", "FALSE_NEGATIVE"])
+                verdict_combo.setToolTip(
+                    "CONFIRMED — the system was correct\n"
+                    "FALSE_POSITIVE — file is safe, system over-detected\n"
+                    "FALSE_NEGATIVE — file IS malicious, system under-detected"
+                )
+                verdict_row.addWidget(verdict_lbl)
+                verdict_row.addWidget(verdict_combo)
+                verdict_row.addStretch()
+                layout.addLayout(verdict_row)
+
+                # Notes field
+                notes_row = QHBoxLayout()
+                notes_lbl = QLabel("Notes:")
+                notes_lbl.setStyleSheet(f"color: {THEME['text']}; border: none;")
+                notes_lbl.setFixedWidth(60)
+                notes_input = QLineEdit()
+                notes_input.setPlaceholderText(
+                    "Required for FP/FN — explain why the verdict is wrong"
+                )
+                notes_row.addWidget(notes_lbl)
+                notes_row.addWidget(notes_input)
+                layout.addLayout(notes_row)
+
+                # Adaptive learning note
+                al_note = QLabel(
+                    "ℹ  Your review will be used to improve the ML model. "
+                    "Features are extracted from the file immediately while it is accessible."
+                )
+                al_note.setWordWrap(True)
+                al_note.setStyleSheet(
+                    f"color: {THEME['muted']}; font-size: 10px; border: none;"
+                )
+                layout.addWidget(al_note)
+
+                # Buttons
+                btn_row = QHBoxLayout()
+                submit_btn = QPushButton("✔  Submit Review")
+                submit_btn.setObjectName("primary")
+                submit_btn.setFixedWidth(150)
+                skip_btn   = QPushButton("Skip")
+                skip_btn.setFixedWidth(80)
+                btn_row.addStretch()
+                btn_row.addWidget(submit_btn)
+                btn_row.addWidget(skip_btn)
+                layout.addLayout(btn_row)
+
+                def _submit():
+                    analyst = verdict_combo.currentText()
+                    notes   = notes_input.text().strip()
+                    if analyst in ("FALSE_POSITIVE", "FALSE_NEGATIVE") and not notes:
+                        notes_input.setPlaceholderText("⚠ Notes are required for FP/FN")
+                        notes_input.setStyleSheet(
+                            f"border: 1px solid {THEME['red']};"
+                        )
+                        return
+                    # Submit with real file_path AND pre-extracted features.
+                    # prefetched_features_json was captured in _prompt_quarantine
+                    # Step 0.5 before quarantine ran — so adaptive learning works
+                    # even when the file is already encrypted in the Quarantine folder.
+                    try:
+                        from modules import feedback as fb_mod
+                        fb_mod.submit_gui_correction(
+                            sha256=sha256,
+                            filename=filename,
+                            file_path=file_path,
+                            analyst_verdict=analyst,
+                            original_verdict=verdict,
+                            notes=notes,
+                            prefetched_features_json=prefetched_features_json,
+                        )
+                    except Exception as e:
+                        print(f"[-] Feedback submission error: {e}")
+                    dlg.accept()
+
+                submit_btn.clicked.connect(_submit)
+                skip_btn.clicked.connect(dlg.reject)
+                dlg.exec()
+
+            except Exception as e:
+                print(f"[-] Feedback dialog error: {e}")
+            finally:
+                done.set()
+
+        self._run_on_main_signal.emit(_show)
+        done.wait(timeout=60)
 
     def _gui_get_engine(self) -> str:
         """
@@ -1092,22 +1258,28 @@ class CyberSentinelGUI(QMainWindow):
         done   = threading.Event()
 
         def _show():
-            from PyQt6.QtWidgets import QMessageBox
-            box = QMessageBox(self)
-            box.setWindowTitle("CyberSentinel — Action Required")
-            box.setText(question)
-            box.setIcon(QMessageBox.Icon.Warning)
-            box.setStandardButtons(
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            box.setDefaultButton(QMessageBox.StandardButton.No)
-            box.setStyleSheet(
-                f"QMessageBox {{ background: {THEME['surface']}; color: {THEME['text']}; }}"
-                f"QLabel {{ color: {THEME['text']}; font-size: 12px; }}"
-                f"QPushButton {{ min-width: 80px; }}"
-            )
-            result[0] = (box.exec() == QMessageBox.StandardButton.Yes)
-            done.set()
+            # R3 Fix: done.set() in finally block guarantees the worker thread
+            # is always released, even if the dialog raises an exception.
+            try:
+                from PyQt6.QtWidgets import QMessageBox
+                box = QMessageBox(self)
+                box.setWindowTitle("CyberSentinel — Action Required")
+                box.setText(question)
+                box.setIcon(QMessageBox.Icon.Warning)
+                box.setStandardButtons(
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                box.setDefaultButton(QMessageBox.StandardButton.No)
+                box.setStyleSheet(
+                    f"QMessageBox {{ background: {THEME['surface']}; color: {THEME['text']}; }}"
+                    f"QLabel {{ color: {THEME['text']}; font-size: 12px; }}"
+                    f"QPushButton {{ min-width: 80px; }}"
+                )
+                result[0] = (box.exec() == QMessageBox.StandardButton.Yes)
+            except Exception:
+                result[0] = False   # Safe default — do not quarantine on error
+            finally:
+                done.set()          # Always release the worker thread
 
         # Schedule _show on the Qt main thread via a signal, then block
         self._run_on_main_signal.emit(_show)

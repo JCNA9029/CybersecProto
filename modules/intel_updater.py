@@ -30,6 +30,20 @@ FEEDS = {
 
 TIMEOUT = 15   # seconds per feed download
 
+# Minimum acceptable response sizes (bytes) — responses smaller than this
+# indicate a compromised, empty, or error response and are rejected.
+MIN_FEED_SIZES = {
+    "lolbas":     10_000,
+    "loldrivers": 50_000,
+    "ja3":         1_000,
+    "feodo":       5_000,
+}
+
+# Feed content types — used to validate the response is parseable
+# before overwriting the cached copy.
+_JSON_FEEDS = {"lolbas", "loldrivers", "feodo"}
+_CSV_FEEDS  = {"ja3"}
+
 
 def _ensure_intel_dir():
     os.makedirs(INTEL_DIR, exist_ok=True)
@@ -87,8 +101,38 @@ def update_feed(feed_name: str, force: bool = False) -> bool:
 
     try:
         print(f"[*] Updating {feed_name} feed from {url} ...")
-        resp = requests.get(url, timeout=TIMEOUT)
+        resp = requests.get(url, timeout=TIMEOUT, verify=True)
         resp.raise_for_status()
+
+        # V3 Fix: Integrity check 1 — minimum size guard
+        # A response smaller than the minimum indicates an error page,
+        # a compromised feed, or a DNS hijack returning a stub response.
+        min_size = MIN_FEED_SIZES.get(feed_name, 1000)
+        if len(resp.content) < min_size:
+            print(
+                f"[-] {feed_name}: Response too small "
+                f"({len(resp.content)} bytes, minimum {min_size}) — rejecting update."
+            )
+            return False
+
+        # V3 Fix: Integrity check 2 — content parseability validation
+        # Validate the response is actually the expected format before
+        # overwriting the cached copy. A corrupted or spoofed response
+        # that cannot be parsed is rejected and the old cache is kept.
+        if feed_name in _JSON_FEEDS:
+            try:
+                json.loads(resp.content)
+            except json.JSONDecodeError as e:
+                print(f"[-] {feed_name}: Invalid JSON in response ({e}) — rejecting update.")
+                return False
+        elif feed_name in _CSV_FEEDS:
+            # CSV: verify at least one non-comment line with expected format
+            lines = resp.text.splitlines()
+            data_lines = [l for l in lines if l.strip() and not l.startswith("#")]
+            if not data_lines:
+                print(f"[-] {feed_name}: No data lines in CSV response — rejecting update.")
+                return False
+
         with open(dest, "wb") as f:
             f.write(resp.content)
         meta[feed_name] = datetime.datetime.now().isoformat()

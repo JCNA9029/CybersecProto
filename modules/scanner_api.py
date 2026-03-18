@@ -15,6 +15,54 @@
 
 import requests
 from requests.exceptions import Timeout, RequestException
+import threading
+import time
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  D2 Fix: Token Bucket Rate Limiter
+#
+#  VirusTotal free tier: 4 requests/minute, 500/day.
+#  Without throttling, scanning a folder of 100 files would fire 400 concurrent
+#  API requests, exhausting the daily quota in seconds.
+#
+#  The token bucket algorithm allows burst usage while enforcing the average
+#  rate. Tokens accumulate at the configured rate up to the bucket capacity.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _TokenBucket:
+    """Thread-safe token bucket rate limiter."""
+
+    def __init__(self, calls_per_minute: float):
+        self._rate    = calls_per_minute / 60.0   # tokens per second
+        self._tokens  = calls_per_minute           # start full
+        self._lock    = threading.Lock()
+        self._last    = time.monotonic()
+
+    def acquire(self):
+        """Blocks until a token is available."""
+        with self._lock:
+            now     = time.monotonic()
+            elapsed = now - self._last
+            self._tokens = min(
+                self._tokens + elapsed * self._rate,
+                self._rate * 60          # cap at one minute of tokens
+            )
+            self._last = now
+            if self._tokens < 1.0:
+                wait = (1.0 - self._tokens) / self._rate
+                time.sleep(wait)
+                self._tokens = 0.0
+            else:
+                self._tokens -= 1.0
+
+
+# One limiter per service — conservative rates for free tiers
+_vt_limiter    = _TokenBucket(calls_per_minute=4)    # VirusTotal free: 4/min
+_otx_limiter   = _TokenBucket(calls_per_minute=10)   # AlienVault OTX: generous
+_md_limiter    = _TokenBucket(calls_per_minute=10)   # MetaDefender free: ~10/min
+_mb_limiter    = _TokenBucket(calls_per_minute=20)   # MalwareBazaar: generous
+
 
 
 class VirusTotalAPI:
@@ -41,6 +89,7 @@ class VirusTotalAPI:
         """
         if not self.api_key:
             return None
+        _vt_limiter.acquire()
         try:
             response = requests.get(
                 self.BASE_URL + file_hash,
@@ -86,6 +135,7 @@ class AlienVaultAPI:
         if not self.api_key:
             return None
         try:
+            _otx_limiter.acquire()
             url = f"https://otx.alienvault.com/api/v1/indicators/file/{file_hash}/general"
             resp = requests.get(url, headers=self.headers, timeout=5)
             if resp.status_code == 200:
@@ -130,6 +180,7 @@ class MetaDefenderAPI:
         if not self.api_key:
             return None
         try:
+            _md_limiter.acquire()
             url = f"https://api.metadefender.com/v4/hash/{file_hash}"
             resp = requests.get(url, headers=self.headers, timeout=5)
             if resp.status_code == 200:
@@ -186,6 +237,7 @@ class MalwareBazaarAPI:
         if not self.api_key:
             return None
         try:
+            _mb_limiter.acquire()
             headers = {**self._HEADERS, "Auth-Key": self.api_key}
             resp = requests.post(
                 self._API_URL,

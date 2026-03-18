@@ -42,10 +42,32 @@ def _is_dga_suspicious(fqdn: str) -> tuple[bool, float]:
     Criteria: entropy > 3.5  AND  label length > 12  OR  consonant/vowel ratio > 4.
     Known CDN/infra suffixes are whitelisted.
     """
+    # R5 Fix: Expanded CDN/infrastructure whitelist to reduce false positives
+    # in enterprise environments with many high-entropy cloud service subdomains.
     SAFE_SUFFIXES = {
-        "google.com","microsoft.com","windows.com","windowsupdate.com",
-        "azure.com","cloudfront.net","amazonaws.com","akamai.net",
-        "fastly.net","cloudflare.com","digicert.com","verisign.com",
+        # Google
+        "google.com", "googleapis.com", "gstatic.com", "googlevideo.com",
+        "googleusercontent.com", "ggpht.com",
+        # Microsoft / Azure
+        "microsoft.com", "windows.com", "windowsupdate.com", "microsoftonline.com",
+        "live.com", "outlook.com", "azure.com", "azureedge.net",
+        "blob.core.windows.net", "azurefd.net", "trafficmanager.net",
+        # AWS
+        "amazonaws.com", "awsstatic.com", "cloudfront.net",
+        "execute-api.us-east-1.amazonaws.com",
+        # Akamai / CDN
+        "akamai.net", "akamaiedge.net", "akamaihd.net", "edgesuite.net",
+        # Fastly / Cloudflare
+        "fastly.net", "fastly.com", "cloudflare.com", "cloudflare.net",
+        "cdn77.com", "edgecastcdn.net", "llnwd.net",
+        # Certificate authorities
+        "digicert.com", "verisign.com", "letsencrypt.org",
+        "sectigo.com", "comodo.com", "globalsign.com",
+        # Apple
+        "apple.com", "icloud.com", "mzstatic.com",
+        # Misc enterprise SaaS
+        "adobe.com", "adobecc.com", "salesforce.com",
+        "office.com", "office365.com", "sharepoint.com",
     }
     for safe in SAFE_SUFFIXES:
         if fqdn.endswith(safe):

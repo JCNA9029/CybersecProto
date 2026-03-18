@@ -190,8 +190,36 @@ def send_webhook_alert(webhook_url: str, title: str, details: dict) -> bool:
     Dispatches a JSON telemetry payload to a Discord/Slack/Teams SOC webhook.
     Returns True on HTTP 2xx success, False on any failure.
     Capped at 5-second timeout so it never blocks the EDR pipeline.
+
+    Security:
+        - Only HTTPS URLs are accepted (prevents plaintext credential leakage)
+        - Private/loopback/metadata IP ranges are blocked (SSRF protection)
     """
     if not webhook_url:
+        return False
+
+    # V2 Fix: SSRF protection — only allow HTTPS to public addresses
+    if not webhook_url.startswith("https://"):
+        print("[-] Webhook rejected: only HTTPS URLs are permitted.")
+        return False
+    try:
+        import urllib.parse
+        host = urllib.parse.urlparse(webhook_url).hostname or ""
+        blocked_prefixes = (
+            "localhost", "127.", "10.", "192.168.",
+            "172.16.", "172.17.", "172.18.", "172.19.",
+            "172.20.", "172.21.", "172.22.", "172.23.",
+            "172.24.", "172.25.", "172.26.", "172.27.",
+            "172.28.", "172.29.", "172.30.", "172.31.",
+            "169.254.",   # Link-local / AWS metadata endpoint
+            "0.0.0.0",
+        )
+        blocked_hosts = {"localhost", "::1", "[::1]"}
+        if host in blocked_hosts or any(host.startswith(p) for p in blocked_prefixes):
+            print(f"[-] Webhook rejected: private/loopback address blocked ({host}).")
+            return False
+    except Exception:
+        print("[-] Webhook rejected: URL parsing failed.")
         return False
 
     # Discord expects "embeds"; Slack/Teams/generic expect "text" or "body".
@@ -532,3 +560,42 @@ def is_excluded(file_path: str) -> bool:
         return any(exc in target_path for exc in exclusions)
     except Exception:
         return False
+
+def prune_old_records(days: int = 90):
+    """
+    Removes records older than N days from high-volume tables to prevent
+    unbounded database growth in long-running daemon deployments.
+
+    Tables pruned: ml_score_log, shap_explanations, risk_scores, event_timeline.
+    Tables preserved: scan_cache, analyst_feedback, learning_queue, anchor_samples,
+                      chain_alerts, driver_alerts (audit trail — never auto-pruned).
+    Calls VACUUM after pruning to reclaim disk space.
+    """
+    cutoff = (
+        datetime.datetime.now() - datetime.timedelta(days=days)
+    ).strftime("%Y-%m-%d %H:%M:%S")
+
+    HIGH_VOLUME_TABLES = [
+        ("ml_score_log",      "timestamp"),
+        ("shap_explanations", "timestamp"),
+        ("risk_scores",       "timestamp"),
+        ("event_timeline",    "timestamp"),
+        ("retraining_log",    "timestamp"),
+    ]
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            total_deleted = 0
+            for table, col in HIGH_VOLUME_TABLES:
+                try:
+                    cursor = conn.execute(
+                        f"DELETE FROM {table} WHERE {col} < ?", (cutoff,)
+                    )
+                    total_deleted += cursor.rowcount
+                except sqlite3.OperationalError:
+                    pass  # Table may not exist yet — skip
+            if total_deleted > 0:
+                conn.execute("VACUUM")
+                print(f"[+] DB pruning: removed {total_deleted} records older than {days} days.")
+    except sqlite3.Error as e:
+        print(f"[-] DB pruning failed: {e}")
+
