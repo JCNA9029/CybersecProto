@@ -92,8 +92,8 @@ File / Process / Network Event
 ### Step 1 — Clone the Repository
 
 ```bash
-git clone https://github.com/JCNA9029/CybersentinelModularized.git
-cd CybersentinelModularized
+git clone https://github.com/JCNA9029/CybersecProto.git
+cd CybersecProto
 ```
 
 ### Step 2 — Create a Virtual Environment (Recommended)
