@@ -1,4 +1,4 @@
-# dashboard.py — CyberSentinel SOC Dashboard v2
+# dashboard.py — CyberSentinel SOC Dashboard v1
 # Run: python dashboard.py   OR   python CyberSentinel.py --dashboard
 # Opens at http://127.0.0.1:5000
 

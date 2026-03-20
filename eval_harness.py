@@ -662,7 +662,7 @@ def _cli_progress(filename: str, score, error: Optional[str]):
 def main():
     """Entry point for the ML benchmarking harness — runs batch evaluation on the dataset."""
     parser = argparse.ArgumentParser(
-        description="CyberSentinel v2 — Quantitative Evaluation Harness",
+        description="CyberSentinel v1 — Quantitative Evaluation Harness",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

@@ -1,4 +1,4 @@
-# CyberSentinel.py — Main CLI v2: all 6 new feature modules integrated
+# CyberSentinel.py — Main CLI v1: all 6 new feature modules integrated
 
 import argparse, os, ctypes
 import tkinter as tk
@@ -33,7 +33,7 @@ class CyberSentinelUI:
 | |   | \ | |  _ \|  _| | |_) \___ \|  _| |  \| | | |  | ||  \| |  _| | |
 | |___| |_| | |_) | |___|  _ < ___) | |___| |\  | | |  | || |\  | |___| |___
  \____|\__, |____/|_____|_| \_\____/|_____|_| \_| |_| |___|_| \_|_____|_____|
-       |___/   v2 — 11-Tier Detection Engine
+       |___/   v1 — 11-Tier Detection Engine
         """)
 
     def setup_api(self):
@@ -297,7 +297,7 @@ class CyberSentinelUI:
 
         while True:
             print("\n" + "="*50)
-            colors.header("  CyberSentinel v2 — Detection Console")
+            colors.header("  CyberSentinel v1 — Detection Console")
             print("="*50)
             print("  ── Core Scanning ──────────────────")
             print("   1. Scan Local File or Directory")
@@ -349,7 +349,7 @@ class CyberSentinelUI:
 # ── ENTRY POINT ────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="CyberSentinel v2 EDR")
+    parser = argparse.ArgumentParser(description="CyberSentinel v1 EDR")
     parser.add_argument("--daemon",    metavar="PATH", help="Run headless daemon on a folder.")
     parser.add_argument("--sync",      metavar="URL",  help="Pull enterprise threat hashes (HTTPS only).")
     parser.add_argument("--dashboard", action="store_true", help="Launch SOC dashboard.")

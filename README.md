@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🛡️ CyberSentinel v2
+# 🛡️ CyberSentinel v1
 
 **A Multi-Tiered Endpoint Detection & Response (EDR) Framework**
 
@@ -17,7 +17,7 @@
 
 ## Overview
 
-CyberSentinel v2 is a modular, multi-tiered EDR framework that chains cloud reputation scanning, offline machine learning, local AI analysis, behavioral detection, and four novel research contributions into a single deployable pipeline. It includes a CLI, a full PyQt6 desktop GUI (18 pages), a SOC web dashboard (Flask), and a headless daemon for real-time process monitoring.
+CyberSentinel v1 is a modular, multi-tiered EDR framework that chains cloud reputation scanning, offline machine learning, local AI analysis, behavioral detection, and four novel research contributions into a single deployable pipeline. It includes a CLI, a full PyQt6 desktop GUI (18 pages), a SOC web dashboard (Flask), and a headless daemon for real-time process monitoring.
 
 Designed as a thesis project for cybersecurity programs and SOC teams that cannot afford commercial EDR licensing. Fully functional on consumer-grade hardware with no GPU required.
 
@@ -48,7 +48,7 @@ File / Process / Network Event
 
 ---
 
-## Novel Contributions (v2)
+## Novel Contributions (v1)
 
 | # | Contribution | Description |
 |---|---|---|

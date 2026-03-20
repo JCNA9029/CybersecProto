@@ -45,7 +45,7 @@ class LocalScanner:
         self.all_model_path = all_model_path
         self.family_model_path = family_model_path
         self.labels_path = labels_path
-        # Optimised V2 threshold (0.6) targets 0.00% FPR on LotL binaries
+        # Optimised v1 threshold (0.6) targets 0.00% FPR on LotL binaries
         self.threshold = threshold
 
         self.all_model = None

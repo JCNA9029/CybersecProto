@@ -770,7 +770,7 @@ Webhook not firing:
   → Try scanning fresh (delete threat_cache.db) — cache hits need fix from latest zip
 
 Quarantine prompt not appearing:
-  → Make sure you are using the latest zip (CyberSentinel_v2_webhook_fix.zip)
+  → Make sure you are using the latest zip (CyberSentinel_v1_latest.zip)
   → Delete threat_cache.db and rescan
 
 Cloud APIs return no verdict:

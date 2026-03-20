@@ -89,7 +89,7 @@ def _legacy_decrypt(encrypted_key: str) -> str:
 def encrypt_key(api_key: str) -> str:
     """
     Encrypts an API key with Fernet (AES-128-CBC + HMAC).
-    Output is prefixed 'v2:' so decrypt_key can identify the scheme.
+    Output is prefixed 'v1:' so decrypt_key can identify the scheme.
     Falls back to the legacy XOR scheme if cryptography is not installed.
     """
     if not api_key:
@@ -235,7 +235,7 @@ def send_webhook_alert(webhook_url: str, title: str, details: dict) -> bool:
     if not webhook_url:
         return False
 
-    # V2 Fix: SSRF protection — only allow HTTPS to public addresses
+    # Fix: SSRF protection — only allow HTTPS to public addresses
     if not webhook_url.startswith("https://"):
         print("[-] Webhook rejected: only HTTPS URLs are permitted.")
         return False

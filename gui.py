@@ -1,6 +1,6 @@
 # gui.py
 #
-# CyberSentinel v2 — PyQt6 Desktop GUI
+# CyberSentinel v1 — PyQt6 Desktop GUI
 #
 # Provides a full graphical interface for all EDR features, replacing the CLI
 # for end-user interaction. All scan operations run in QThread workers so the
@@ -19,7 +19,7 @@
 #   Evaluation, Analyst Feedback, Adaptive Learning
 
 """
-gui.py — CyberSentinel v2 Desktop GUI
+gui.py — CyberSentinel v1 Desktop GUI
 Run: python gui.py
 Requires: pip install PyQt6
 All existing modules (analysis_manager, lolbas_detector, etc.) are imported directly.
@@ -583,7 +583,7 @@ class CyberSentinelGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self._run_on_main_signal.connect(lambda fn: fn())
-        self.setWindowTitle("CyberSentinel v2 — EDR Console")
+        self.setWindowTitle("CyberSentinel v1 — EDR Console")
         self.setMinimumSize(900, 600)
         self.setStyleSheet(BASE_STYLE)
         self._workers = []   # keep references so GC doesn't destroy threads
@@ -700,7 +700,7 @@ class CyberSentinelGUI(QMainWindow):
         title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_lbl.setStyleSheet(f"color: {THEME['blue']}; border: none;")
 
-        ver_lbl = QLabel("v2 — EDR Console")
+        ver_lbl = QLabel("v1 — EDR Console")
         ver_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         ver_lbl.setStyleSheet(f"color: {THEME['muted']}; font-size: 10px; border: none;")
 
@@ -4045,7 +4045,7 @@ class CyberSentinelGUI(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("CyberSentinel v2")
+    app.setApplicationName("CyberSentinel v1")
 
     # Dark palette
     palette = QPalette()

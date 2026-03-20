@@ -131,7 +131,7 @@ def start_daemon(target_dir: str):
     baseline   = BaselineEngine()
     amsi       = AmsiMonitor()
 
-    print(f"\n[+] CyberSentinel Daemon v2 Active")
+    print(f"\n[+] CyberSentinel Daemon v1 Active")
     print(f"[*] 📂  Watching : {os.path.abspath(target_dir)}")
     print(f"[*] ⚙️   WMI      : process + driver interception")
     print(f"[*] 🌐  Feodo    : {len(feodo._blocklist)} C2 IPs loaded")
