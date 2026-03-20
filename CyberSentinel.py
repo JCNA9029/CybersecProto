@@ -39,16 +39,21 @@ class CyberSentinelUI:
     def setup_api(self):
         """Loads saved configuration or prompts for initial API key setup."""
         config = utils.load_config()
-        self.logic.api_keys   = config.get("api_keys", {})
+        self.logic.api_keys    = config.get("api_keys", {})
         self.logic.webhook_url = config.get("webhook_url", "")
+        self.logic.llm_model   = config.get("llm_model", "qwen2.5:3b")
         if self.logic.api_keys:
-            colors.success("[+] Configuration loaded.")
+            colors.success(f"[+] Configuration loaded.  LLM: {self.logic.llm_model}")
         else:
             print("\n--- First Time Setup ---")
             key = input("VirusTotal API key (blank to skip): ").strip()
             if key:
                 self.logic.api_keys["virustotal"] = key
-                utils.save_config(self.logic.api_keys, self.logic.webhook_url)
+                utils.save_config(
+                    self.logic.api_keys,
+                    self.logic.webhook_url,
+                    self.logic.llm_model,
+                )
 
     # ── existing menu actions (unchanged) ──────────────────────────────────
 
@@ -110,19 +115,101 @@ class CyberSentinelUI:
         elif c == "2": restore_network()
 
     def update_settings(self):
-        """Interactive settings editor for API keys and webhook URL."""
-        if not isinstance(self.logic.api_keys, dict): self.logic.api_keys = {}
-        for eng in ("virustotal","alienvault","metadefender","malwarebazaar"):
+        """Interactive settings editor for API keys, webhook URL, and LLM model."""
+        if not isinstance(self.logic.api_keys, dict):
+            self.logic.api_keys = {}
+
+        # ── API Keys ────────────────────────────────────────────────────────
+        print("\n--- Cloud API Keys ---")
+        for eng in ("virustotal", "alienvault", "metadefender", "malwarebazaar"):
             status = "Active" if self.logic.api_keys.get(eng) else "Not Set"
             print(f"[*] {eng.capitalize()}: {status}")
-            k = input(f"  New key (CLEAR/Enter): ").strip()
-            if k.upper() == "CLEAR": self.logic.api_keys.pop(eng, None)
-            elif k: self.logic.api_keys[eng] = k
-        wh = input("  Webhook URL (CLEAR/Enter): ").strip()
-        if wh.upper() == "CLEAR": self.logic.webhook_url = ""
-        elif wh: self.logic.webhook_url = wh
-        utils.save_config(self.logic.api_keys, self.logic.webhook_url)
-        colors.success("[+] Settings saved.")
+            k = input(f"  New key (CLEAR to remove / Enter to keep): ").strip()
+            if k.upper() == "CLEAR":
+                self.logic.api_keys.pop(eng, None)
+            elif k:
+                self.logic.api_keys[eng] = k
+
+        # ── Webhook ─────────────────────────────────────────────────────────
+        print("\n--- SOC Webhook ---")
+        print(f"[*] Current: {self.logic.webhook_url or 'Not configured'}")
+        wh = input("  New URL (CLEAR to remove / Enter to keep): ").strip()
+        if wh.upper() == "CLEAR":
+            self.logic.webhook_url = ""
+        elif wh:
+            self.logic.webhook_url = wh
+
+        # ── LLM Model Selection ─────────────────────────────────────────────
+        print("\n--- Local AI Model (Ollama) ---")
+        print(f"[*] Current model: {self.logic.llm_model}")
+        print("[*] Scanning for installed Ollama models...")
+
+        installed = utils.ollama_list_models()
+
+        # Recommended models with RAM hints
+        RECOMMENDED = {
+            "deepseek-r1:8b": "~8 GB RAM — best quality reports",
+            "qwen2.5:7b":     "~4.7 GB RAM — good balance",
+            "qwen2.5:3b":     "~2.0 GB RAM — recommended default, fastest",
+        }
+
+        if installed:
+            colors.success(f"[+] Found {len(installed)} installed model(s):\n")
+            options = {}
+            idx = 1
+            for m in installed:
+                hint = RECOMMENDED.get(m, "")
+                rec  = " ✓ RECOMMENDED" if m in RECOMMENDED else ""
+                hint_str = f"  ({hint})" if hint else ""
+                print(f"  {idx}. {m}{hint_str}{rec}")
+                options[str(idx)] = m
+                idx += 1
+            print(f"  {idx}. Keep current ({self.logic.llm_model})")
+            print(f"  {idx+1}. Enter model name manually")
+
+            choice = input(f"\n  Select [1-{idx+1}]: ").strip()
+            if choice in options:
+                self.logic.llm_model = options[choice]
+                colors.success(f"[+] LLM model set to: {self.logic.llm_model}")
+            elif choice == str(idx):
+                colors.info(f"[*] Keeping current model: {self.logic.llm_model}")
+            elif choice == str(idx + 1):
+                manual = input("  Model name (e.g. llama3.2:latest): ").strip()
+                if manual:
+                    self.logic.llm_model = manual
+                    colors.success(f"[+] LLM model set to: {self.logic.llm_model}")
+            else:
+                colors.warning("[-] Invalid choice — keeping current model.")
+        else:
+            colors.warning(
+                "[!] Ollama not detected or no models installed.\n"
+                "    Install a model with:  ollama pull qwen2.5:3b\n"
+                "    Recommended options:\n"
+            )
+            for m, hint in RECOMMENDED.items():
+                marker = " ← current" if m == self.logic.llm_model else ""
+                print(f"    • {m}  ({hint}){marker}")
+
+            manual = input(
+                f"\n  Enter model name to set (Enter to keep '{self.logic.llm_model}'): "
+            ).strip()
+            if manual:
+                self.logic.llm_model = manual
+                colors.success(f"[+] LLM model set to: {self.logic.llm_model}")
+            else:
+                colors.info(f"[*] Keeping current model: {self.logic.llm_model}")
+
+        # ── Save all ────────────────────────────────────────────────────────
+        utils.save_config(
+            self.logic.api_keys,
+            self.logic.webhook_url,
+            self.logic.llm_model,
+        )
+        colors.success(
+            f"[+] Settings saved — "
+            f"APIs: {sum(1 for v in self.logic.api_keys.values() if v)} configured  |  "
+            f"LLM: {self.logic.llm_model}"
+        )
 
     def _menu_view_cache(self):
         rows = utils.get_all_cached_results()
@@ -216,7 +303,7 @@ class CyberSentinelUI:
             print("   1. Scan Local File or Directory")
             print("   2. Scan Hash or IoC Batch List")
             print("   3. Analyze Active Memory (Live EDR)")
-            print("  ── New Detectors ──────────────────")
+            print("  ── Detectors ──────────────────────")
             print("   4. LoLBin Abuse Checker")
             print("   5. BYOVD Vulnerable Driver Scan")
             print("   6. Attack Chain Correlation Alerts")
@@ -225,7 +312,7 @@ class CyberSentinelUI:
             print("  ── Management ─────────────────────")
             print("   9. Network Containment Control")
             print("  10. Update Threat Intelligence Feeds")
-            print("  11. Configure Cloud Integrations")
+            print(f"  11. Configure Settings  [LLM: {self.logic.llm_model}]")
             print("  12. View Threat Cache")
             print("  13. View Analyst Feedback History")
             print("  14. Generate Report & Exit")

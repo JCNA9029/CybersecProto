@@ -48,7 +48,7 @@ Press `Win + R`, type `cmd`, press Enter.
 ### Step 2 — Navigate to the project folder
 
 ```
-cd C:\Users\Acer\Desktop\CyberSentinel
+cd C:\CyberSentinel
 ```
 
 Replace the path with wherever your CyberSentinel folder actually is.
@@ -160,12 +160,12 @@ To see live data while scanning:
 1. Open **two separate terminal windows**.
 2. In Terminal 1 — start the dashboard:
    ```
-   cd C:\Users\Acer\Desktop\CyberSentinel
+   cd C:\CyberSentinel
    python dashboard.py
    ```
 3. In Terminal 2 — run scans or start the daemon:
    ```
-   cd C:\Users\Acer\Desktop\CyberSentinel
+   cd C:\CyberSentinel
    python CyberSentinel.py
    ```
 4. As you complete scans in Terminal 2, click **↻ Refresh** in the browser
@@ -210,7 +210,7 @@ and change `port=5000` to `port=5001`. Then go to `http://127.0.0.1:5001`.
 The database does not exist yet, or it is in a different folder.
 Check: does `threat_cache.db` exist in your CyberSentinel folder?
 ```
-dir C:\Users\Acer\Desktop\CyberSentinel\threat_cache.db
+dir C:\CyberSentinel\threat_cache.db
 ```
 If not found, run CyberSentinel and complete at least one scan first.
 
@@ -245,11 +245,11 @@ your machine, so this is safe to allow.
 
 ```
 1.  Open Command Prompt
-2.  cd C:\Users\Acer\Desktop\CyberSentinel
+2.  cd C:\CyberSentinel
 3.  python dashboard.py
 4.  Open browser → http://127.0.0.1:5000
 5.  Open a SECOND terminal for running scans
-6.  cd C:\Users\Acer\Desktop\CyberSentinel
+6.  cd C:\CyberSentinel
 7.  python CyberSentinel.py
 8.  Run scans, then click Refresh in the browser
 ```

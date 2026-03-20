@@ -231,7 +231,6 @@ QLabel#header {{
     color: {THEME['blue']};
     font-size: 18px;
     font-weight: bold;
-    letter-spacing: 2px;
 }}
 QLabel#subheader {{
     color: {THEME['muted']};
@@ -531,42 +530,35 @@ def verdict_color(v: str) -> str:
     if "SAFE" in v:                         return THEME["green"]
     return THEME["muted"]
 
-def make_table(headers: list, stretch_col: int = -1) -> QTableWidget:
+def make_table(headers: list, stretch_col: int = -1, wrap_last: bool = False) -> QTableWidget:
     """
     Creates a styled, responsive QTableWidget.
 
     stretch_col: index of the column that fills remaining space.
-                 All other columns resize to their content.
-                 Pass -1 (default) to stretch the last column.
-
-    Responsive behaviour:
-      - Stretch column expands to fill available width
-      - Content columns shrink/grow with content
-      - Horizontal scrollbar appears when total content exceeds width
-      - Interactive resize handles allow manual column adjustment
+    wrap_last:   if True, enables word wrap so the stretch column shows
+                 full text across multiple lines (used for Description columns).
     """
     t = QTableWidget(0, len(headers))
     t.setHorizontalHeaderLabels(headers)
     hdr = t.horizontalHeader()
-    hdr.setStretchLastSection(False)    # We manage this manually below
+    hdr.setStretchLastSection(False)
     last   = len(headers) - 1
     target = stretch_col if stretch_col >= 0 else last
     for i in range(len(headers)):
         if i == target:
             hdr.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
         else:
-            hdr.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
-            hdr.setMinimumSectionSize(60)
-    # Apply initial ResizeToContents then switch to Interactive for user control
-    t.resizeColumnsToContents()
+            hdr.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+    hdr.setMinimumSectionSize(60)
     t.verticalHeader().setVisible(False)
     t.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
     t.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
     t.setAlternatingRowColors(False)
     t.setShowGrid(True)
     t.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-    t.setWordWrap(False)
-    # Show resize cursor on column dividers so the user knows they are draggable
+    # Word wrap only for tables with a long description column —
+    # enables multi-line rows so full text is always visible
+    t.setWordWrap(wrap_last)
     t.horizontalHeader().setCursor(Qt.CursorShape.SizeHorCursor)
     return t
 
@@ -767,7 +759,6 @@ class CyberSentinelGUI(QMainWindow):
                     color: {THEME['muted']};
                     font-size: 9px;
                     font-weight: bold;
-                    letter-spacing: 1.5px;
                     padding: 10px 8px 4px 8px;
                     background: transparent;
                 """)
@@ -1901,13 +1892,13 @@ class CyberSentinelGUI(QMainWindow):
         grp_layout = QVBoxLayout(grp)
         self._chains_table = make_table(
             ["Timestamp", "Chain", "MITRE", "Severity", "Description"],
-            stretch_col=4    # Description gets all remaining space
+            stretch_col=4,
+            wrap_last=True,
         )
-        # Set comfortable initial widths for fixed columns
-        self._chains_table.setColumnWidth(0, 155)   # Timestamp
-        self._chains_table.setColumnWidth(1, 180)   # Chain name
-        self._chains_table.setColumnWidth(2, 130)   # MITRE
-        self._chains_table.setColumnWidth(3, 90)    # Severity
+        self._chains_table.setColumnWidth(0, 155)
+        self._chains_table.setColumnWidth(1, 180)
+        self._chains_table.setColumnWidth(2, 130)
+        self._chains_table.setColumnWidth(3, 90)
         grp_layout.addWidget(self._chains_table)
         inner_layout.addWidget(grp, 1)
 
@@ -1938,7 +1929,9 @@ class CyberSentinelGUI(QMainWindow):
                 t.setItem(row, 1, table_item(r.get("chain_name", "—"), THEME["red"]))
                 t.setItem(row, 2, table_item(r.get("mitre", "—"), THEME["blue"]))
                 t.setItem(row, 3, table_item(sev, THEME["red"] if sev == "CRITICAL" else THEME["yellow"]))
-                t.setItem(row, 4, table_item((r.get("description") or "")[:80], THEME["muted"]))
+                t.setItem(row, 4, table_item(r.get("description") or "—", THEME["muted"]))
+            # Resize rows so full description text is visible without truncation
+            t.resizeRowsToContents()
 
     # ── PAGE: BASELINE ────────────────────────────────────────────────────────
 
@@ -2060,7 +2053,10 @@ class CyberSentinelGUI(QMainWindow):
 
         grp = QGroupBox("Fileless / AMSI Alert History")
         grp_layout = QVBoxLayout(grp)
-        self._fileless_table = make_table(["Timestamp", "Source", "PID", "Findings"])
+        self._fileless_table = make_table(
+            ["Timestamp", "Source", "PID", "Findings"],
+            wrap_last=True,
+        )
         grp_layout.addWidget(self._fileless_table)
         inner_layout.addWidget(grp, 1)
 
@@ -2084,7 +2080,8 @@ class CyberSentinelGUI(QMainWindow):
                 t.setItem(row, 0, table_item(r.get("timestamp", "")))
                 t.setItem(row, 1, table_item(r.get("source", "—")))
                 t.setItem(row, 2, table_item(r.get("pid", "—")))
-                t.setItem(row, 3, table_item((r.get("findings") or "")[:100], THEME["yellow"]))
+                t.setItem(row, 3, table_item(r.get("findings") or "—", THEME["yellow"]))
+            t.resizeRowsToContents()
 
     # ── PAGE: NETWORK ─────────────────────────────────────────────────────────
 
@@ -2258,8 +2255,8 @@ class CyberSentinelGUI(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(self._page_header(
-            "⚙️", "Configure Cloud Integrations",
-            "API keys are encrypted with Fernet AES-128 and stored in config.json"
+            "⚙️", "Settings",
+            "API keys encrypted with Fernet AES-128 · LLM model selection · Webhook configuration"
         ))
 
         inner = QWidget()
@@ -2312,6 +2309,170 @@ class CyberSentinelGUI(QMainWindow):
             api_form.addRow(QLabel(key.capitalize() + ":"), row_layout)
         inner_layout.addWidget(api_grp)
 
+        # ── LLM Model Selection ───────────────────────────────────────────────
+        llm_grp = QGroupBox("Local AI Model (Ollama)")
+        llm_layout = QVBoxLayout(llm_grp)
+        llm_layout.setSpacing(10)
+
+        # Info label
+        llm_info = QLabel(
+            "Select the Ollama model used for AI analyst reports.\n"
+            "Click 'Scan' to detect models currently installed on your machine."
+        )
+        llm_info.setStyleSheet(f"color: {THEME['muted']}; font-size: 10px;")
+        llm_info.setWordWrap(True)
+        llm_layout.addWidget(llm_info)
+
+        # Recommended models with RAM hints
+        RECOMMENDED = {
+            "deepseek-r1:8b": ("deepseek-r1:8b", "~8 GB RAM", "Best quality reports"),
+            "qwen2.5:7b":     ("qwen2.5:7b",     "~4.7 GB RAM", "Good balance"),
+            "qwen2.5:3b":     ("qwen2.5:3b",     "~2.0 GB RAM", "Recommended default — fastest"),
+        }
+
+        # Combo + scan row
+        combo_row = QHBoxLayout()
+
+        self._llm_combo = QComboBox()
+        self._llm_combo.setEditable(False)
+        self._llm_combo.setMinimumWidth(280)
+        # Set explicit font so Qt never falls back to a 0-point font
+        # when rendering the dropdown items
+        self._llm_combo.setFont(QFont("Arial", 11))
+        self._llm_combo.setStyleSheet(f"""
+            QComboBox {{
+                background: #0d1117;
+                color: {THEME['text']};
+                border: 1px solid {THEME['border']};
+                border-radius: 4px;
+                padding: 6px 10px;
+                font-family: Arial;
+                font-size: 11px;
+            }}
+            QComboBox:focus {{
+                border: 1px solid {THEME['blue']};
+            }}
+            QComboBox QAbstractItemView {{
+                background: #161b22;
+                color: {THEME['text']};
+                border: 1px solid {THEME['border']};
+                selection-background-color: {THEME['blue']};
+                font-family: Arial;
+                font-size: 11px;
+                outline: none;
+            }}
+        """)
+
+        scan_btn = QPushButton("🔍  Scan Available Models")
+        scan_btn.setMinimumWidth(180)
+        scan_btn.setToolTip("Runs 'ollama list' to find models installed on this machine")
+
+        self._llm_status_lbl = QLabel("")
+        self._llm_status_lbl.setStyleSheet(f"color: {THEME['muted']}; font-size: 10px;")
+
+        combo_row.addWidget(self._llm_combo, 1)
+        combo_row.addWidget(scan_btn)
+        llm_layout.addLayout(combo_row)
+        llm_layout.addWidget(self._llm_status_lbl)
+
+        # RAM hint label — updates when selection changes
+        self._llm_hint_lbl = QLabel("")
+        self._llm_hint_lbl.setStyleSheet(
+            f"color: {THEME['green']}; font-size: 10px; font-style: italic;"
+        )
+        llm_layout.addWidget(self._llm_hint_lbl)
+
+        inner_layout.addWidget(llm_grp)
+
+        def _populate_combo(models: list, status: str):
+            """Fills the combo box, marking recommended models with hints."""
+            self._llm_combo.clear()
+            current = getattr(self.logic, "llm_model", "qwen2.5:3b") or "qwen2.5:3b"
+            found_current = False
+
+            # Add installed models first
+            for m in models:
+                rec = RECOMMENDED.get(m)
+                if rec:
+                    label = f"[*] {m}  ({rec[1]}) — {rec[2]}"
+                else:
+                    label = f"    {m}"
+                self._llm_combo.addItem(label, userData=m)
+                if m == current:
+                    self._llm_combo.setCurrentIndex(self._llm_combo.count() - 1)
+                    found_current = True
+
+            # If current model not in installed list, add it as a fallback entry
+            if not found_current:
+                label = f"    {current}  (currently configured)"
+                self._llm_combo.addItem(label, userData=current)
+                self._llm_combo.setCurrentIndex(self._llm_combo.count() - 1)
+
+            self._llm_status_lbl.setText(status)
+            _update_hint()
+
+        def _update_hint():
+            """Shows RAM/quality hint for the currently selected model."""
+            data = self._llm_combo.currentData()
+            rec  = RECOMMENDED.get(data or "")
+            if rec:
+                self._llm_hint_lbl.setText(
+                    f"[*] {rec[0]}  |  RAM: {rec[1]}  |  {rec[2]}"
+                )
+            else:
+                self._llm_hint_lbl.setText(
+                    "ℹ  Custom model selected — ensure it is pulled and Ollama is running."
+                )
+                self._llm_hint_lbl.setStyleSheet(
+                    f"color: {THEME['muted']}; font-size: 10px; font-style: italic;"
+                )
+
+        self._llm_combo.currentIndexChanged.connect(_update_hint)
+
+        def _scan_models():
+            scan_btn.setEnabled(False)
+            self._llm_status_lbl.setText("Scanning installed models…")
+            from modules import utils as _utils
+
+            def _do():
+                return _utils.ollama_list_models()
+
+            worker = GenericWorker(_do)
+
+            def _done(models):
+                scan_btn.setEnabled(True)
+                if models:
+                    _populate_combo(
+                        models,
+                        f"Found {len(models)} installed model(s). "
+                        f"✓ = CyberSentinel recommended."
+                    )
+                    self._llm_status_lbl.setStyleSheet(
+                        f"color: {THEME['green']}; font-size: 10px;"
+                    )
+                else:
+                    # Ollama not running or no models — show recommended list manually
+                    self._llm_status_lbl.setText(
+                        "⚠ Ollama not detected or no models installed. "
+                        "Showing recommended models — install via 'ollama pull <model>'."
+                    )
+                    self._llm_status_lbl.setStyleSheet(
+                        f"color: {THEME['yellow']}; font-size: 10px;"
+                    )
+                    _populate_combo(list(RECOMMENDED.keys()), "")
+
+            worker.finished.connect(_done)
+            self._workers.append(worker)
+            worker.start()
+
+        scan_btn.clicked.connect(_scan_models)
+
+        # Auto-populate on page load with current model pre-selected
+        _populate_combo(
+            list(RECOMMENDED.keys()),
+            "Click 'Scan Available Models' to detect installed models."
+        )
+
         # Webhook
         wh_grp = QGroupBox("SOC Webhook")
         wh_layout = QHBoxLayout(wh_grp)
@@ -2349,8 +2510,18 @@ class CyberSentinelGUI(QMainWindow):
             else:
                 self.logic.api_keys.pop(key, None)
         self.logic.webhook_url = self._webhook_field.text().strip()
-        _utils.save_config(self.logic.api_keys, self.logic.webhook_url)
-        self._settings_status.setText("[+] Configuration saved and encrypted.")
+        # Persist selected LLM model
+        selected_model = self._llm_combo.currentData() or self._llm_combo.currentText().strip()
+        if selected_model:
+            self.logic.llm_model = selected_model
+        _utils.save_config(
+            self.logic.api_keys,
+            self.logic.webhook_url,
+            self.logic.llm_model,
+        )
+        self._settings_status.setText(
+            f"[+] Configuration saved — LLM: {self.logic.llm_model}"
+        )
 
     def _test_webhook(self):
         from modules import utils as _utils
@@ -3075,7 +3246,8 @@ class CyberSentinelGUI(QMainWindow):
 
         self._conflict_table = make_table(
             ["ID", "File", "Type", "Original Verdict", "Conflict Reason", "Queued At"],
-            stretch_col=4
+            stretch_col=4,
+            wrap_last=True,
         )
         conflict_layout.addWidget(self._conflict_table)
         tabs.addTab(conflict_widget, "⚠  Conflicted")

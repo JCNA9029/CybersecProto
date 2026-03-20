@@ -43,6 +43,7 @@ class ScannerLogic:
         config = utils.load_config()
         self.api_keys      = config.get("api_keys", {})
         self.webhook_url   = config.get("webhook_url", "")
+        self.llm_model     = config.get("llm_model", "qwen2.5:3b")
         self.ml_scanner    = LocalScanner()
         self.session_log: list[str] = []
         self.headless_mode = False
@@ -215,7 +216,7 @@ Format output EXACTLY using these headers:
 
         try:
             response = ollama.chat(
-                model="qwen2.5:3b",
+                model=self.llm_model,
                 messages=[
                     {
                         "role": "system",

@@ -86,13 +86,14 @@ HTML = """
   .panel-wrap{
     background:var(--s);border:1px solid var(--b);
     border-radius:0 8px 8px 8px;padding:16px 20px;margin:0 28px 24px;
-    min-height:120px;
+    min-height:120px;overflow-x:auto;
   }
   .panel{display:none}.panel.active{display:block}
 
-  table{width:100%;border-collapse:collapse}
-  th{text-align:left;padding:6px 10px;color:var(--m);border-bottom:1px solid var(--b)}
-  td{padding:6px 10px;border-bottom:1px solid var(--b)}
+  table{width:100%;border-collapse:collapse;table-layout:auto}
+  th{text-align:left;padding:6px 10px;color:var(--m);border-bottom:1px solid var(--b);white-space:nowrap}
+  td{padding:6px 10px;border-bottom:1px solid var(--b);white-space:nowrap;max-width:480px;overflow:hidden;text-overflow:ellipsis}
+  td:last-child{white-space:normal;max-width:none}
   tr:hover td{background:rgba(255,255,255,.03)}
 
   .badge{

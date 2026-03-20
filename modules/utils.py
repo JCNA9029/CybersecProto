@@ -142,8 +142,8 @@ def decrypt_key(encrypted_key: str) -> str:
 # ─────────────────────────────────────────────
 
 def load_config() -> dict:
-    """Reads and decrypts all API keys and the webhook URL from disk."""
-    config_data = {"api_keys": {}, "webhook_url": ""}
+    """Reads and decrypts all API keys, webhook URL, and LLM model from disk."""
+    config_data = {"api_keys": {}, "webhook_url": "", "llm_model": "qwen2.5:3b"}
     if not os.path.exists(CONFIG_FILE):
         return config_data
 
@@ -157,21 +157,31 @@ def load_config() -> dict:
         if "api_key" in data and not keys:
             keys["virustotal"] = data.get("api_key", "")
 
-        config_data["api_keys"] = {k: decrypt_key(v) for k, v in keys.items() if v}
+        config_data["api_keys"]   = {k: decrypt_key(v) for k, v in keys.items() if v}
         config_data["webhook_url"] = decrypt_key(data.get("webhook_url", ""))
+        # LLM model is stored in plain text — not sensitive
+        config_data["llm_model"]   = data.get("llm_model", "qwen2.5:3b") or "qwen2.5:3b"
     except Exception:
         pass  # Non-critical: operation continues regardless
 
     return config_data
 
 
-def save_config(api_keys: dict, webhook_url: str = "") -> bool:
-    """Encrypts all API keys with Fernet and writes them to disk."""
+def save_config(
+    api_keys:   dict,
+    webhook_url: str = "",
+    llm_model:  str = "qwen2.5:3b",
+) -> bool:
+    """Encrypts all API keys with Fernet and writes them + LLM model to disk."""
     try:
         encrypted_keys = {k: encrypt_key(v) for k, v in api_keys.items() if v}
         with open(CONFIG_FILE, "w") as f:
             json.dump(
-                {"api_keys": encrypted_keys, "webhook_url": encrypt_key(webhook_url)},
+                {
+                    "api_keys":   encrypted_keys,
+                    "webhook_url": encrypt_key(webhook_url),
+                    "llm_model":  llm_model or "qwen2.5:3b",
+                },
                 f,
                 indent=2,
             )
@@ -179,6 +189,33 @@ def save_config(api_keys: dict, webhook_url: str = "") -> bool:
     except Exception as e:
         print(f"[-] Failed to save configuration: {e}")
         return False
+
+
+def ollama_list_models() -> list[str]:
+    """
+    Returns a sorted list of locally available Ollama model names by
+    calling `ollama list` as a subprocess.
+
+    Returns an empty list if Ollama is not installed or not running.
+    Each entry is the model tag exactly as Ollama reports it,
+    e.g. ['deepseek-r1:8b', 'qwen2.5:3b', 'qwen2.5:7b'].
+    """
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["ollama", "list"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+        models = []
+        for line in result.stdout.splitlines()[1:]:   # skip header row
+            parts = line.split()
+            if parts:
+                models.append(parts[0])              # first column is NAME:TAG
+        return sorted(models)
+    except Exception:
+        return []
 
 
 # ─────────────────────────────────────────────

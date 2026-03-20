@@ -366,7 +366,7 @@ class SHAPExplainer:
             return "No SHAP explanation available."
 
         lines = [
-            f"Verdict: {verdict} (confidence: {score:.1%})",
+            f"Verdict: {verdict} (confidence: {score:.2%})",
             "Primary factors driving this verdict:",
         ]
         for i, feat in enumerate(top_features, 1):

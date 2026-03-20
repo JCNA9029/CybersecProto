@@ -1,14 +1,14 @@
 # CyberSentinel — Complete Feature Testing Guide
 # Every feature, every path, with exact inputs and expected outputs.
 # Run every test from inside the CyberSentinel project folder.
-# cd C:\Users\Acer\Desktop\CyberSentinel
+# cd C:\CyberSentinel
 
 ================================================================================
  BEFORE YOU START — SETUP CHECKLIST
 ================================================================================
 
 1. You are in the correct folder:
-      cd C:\Users\Acer\Desktop\CyberSentinel
+      cd C:\CyberSentinel
 
 2. Delete the old database so cache hits don't interfere with tests:
       del threat_cache.db
@@ -35,7 +35,7 @@ You need to create several test files before starting. Do all of this first.
 
     X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*
 
- Save as:  C:\Users\Acer\Desktop\CyberSentinel\test_samples\eicar.com
+ Save as:  C:\CyberSentinel\test_samples\eicar.com
 
  This string is the industry-standard test for antivirus. It is NOT real
  malware. Every cloud API (VirusTotal, MetaDefender, etc.) will flag it as
@@ -47,13 +47,13 @@ You need to create several test files before starting. Do all of this first.
  Open Notepad. Type anything, e.g.:
     Hello. This is a safe test file. CyberSentinel should not flag this.
 
- Save as:  C:\Users\Acer\Desktop\CyberSentinel\test_samples\safe_file.txt
+ Save as:  C:\CyberSentinel\test_samples\safe_file.txt
 
 ────────────────────────────────────────────────────────────────────────────────
  TEST FILE 3 — EICAR Renamed (tests that detection is hash-based, not name-based)
 ────────────────────────────────────────────────────────────────────────────────
  Copy eicar.com and rename the copy to:
-    C:\Users\Acer\Desktop\CyberSentinel\test_samples\totally_safe.txt
+    C:\CyberSentinel\test_samples\totally_safe.txt
 
  Expected: Still flagged MALICIOUS (SHA-256 is the same regardless of filename).
 
@@ -61,7 +61,7 @@ You need to create several test files before starting. Do all of this first.
  TEST FILE 4 — Notepad.exe Copy  (BENIGN executable — tests ML on real PE)
 ────────────────────────────────────────────────────────────────────────────────
  In Command Prompt:
-    copy C:\Windows\System32\notepad.exe C:\Users\Acer\Desktop\CyberSentinel\test_samples\notepad_test.exe
+    copy C:\Windows\System32\notepad.exe C:\CyberSentinel\test_samples\notepad_test.exe
 
  Expected: SAFE from cloud + SAFE from ML.
 
@@ -87,7 +87,7 @@ PURPOSE: Confirm that safe files return SAFE and do NOT trigger quarantine.
 STEPS:
   1. python CyberSentinel.py
   2. Select: 1
-  3. Paste path: C:\Users\Acer\Desktop\CyberSentinel\test_samples\safe_file.txt
+  3. Paste path: C:\CyberSentinel\test_samples\safe_file.txt
   4. Select cloud engine: 5 (Smart Consensus)
   5. When asked about AI report: N (skip to save time)
 
@@ -118,7 +118,7 @@ PREREQUISITE: Make sure threat_cache.db does NOT already have the EICAR hash.
 STEPS:
   1. python CyberSentinel.py
   2. Select: 1
-  3. Paste path: C:\Users\Acer\Desktop\CyberSentinel\test_samples\eicar.com
+  3. Paste path: C:\CyberSentinel\test_samples\eicar.com
   4. Select cloud engine: 5 (Smart Consensus)
 
 EXPECTED OUTPUT (in this exact order):
@@ -458,7 +458,7 @@ TO TEST IT FULLY (requires Administrator + pywin32):
       -Name "EnableScriptBlockLogging" -Value 1 -Force
 
   Step 2 — Start the daemon:
-    python CyberSentinel.py --daemon "C:\Users\Acer\Desktop\CyberSentinel\test_samples"
+    python CyberSentinel.py --daemon "C:\CyberSentinel\test_samples"
 
   Step 3 — In a separate PowerShell window, run a test obfuscated command
     (this is harmless but matches the detection pattern):
@@ -627,7 +627,7 @@ PREREQUISITE: Run several tests above so the database has data.
 
 STEPS:
   1. Open a NEW terminal:
-       cd C:\Users\Acer\Desktop\CyberSentinel
+       cd C:\CyberSentinel
        python dashboard.py
 
   2. Open browser: http://127.0.0.1:5000
@@ -654,7 +654,7 @@ PASS CRITERIA:
 
 STEPS:
   1. Run as Administrator:
-     python CyberSentinel.py --daemon "C:\Users\Acer\Desktop\CyberSentinel\test_samples"
+     python CyberSentinel.py --daemon "C:\CyberSentinel\test_samples"
 
   2. In a SEPARATE window, copy the EICAR file into the watched folder:
      copy test_samples\eicar.com test_samples\eicar_dropped.com
